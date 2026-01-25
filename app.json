@@ -2,6 +2,7 @@
   "expo": {
     "name": "hanyu-learn",
     "slug": "hanyu-learn",
+    "scheme": "hanyu-learn",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,6 +17,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.dc.hanyulearn",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -25,6 +27,14 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "03d06603-fea0-4b3c-968c-4ad789fcf8ab"
+      }
+    },
+    "plugins": [
+      "expo-web-browser"
+    ]
   }
 }
