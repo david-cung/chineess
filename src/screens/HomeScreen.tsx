@@ -15,7 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
 import { Card, Button, ProgressBar, QuickAction } from '../components';
-import { mockDailyGoal, currentLesson } from '../constants/mockData';
+import { mockDailyGoal } from '../constants/mockData';
 
 // Get API base URL from config
 const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
@@ -28,26 +28,49 @@ interface UserSummary {
     avatarUrl: string | null;
 }
 
+interface CourseInfo {
+    id: string;
+    level: string;
+}
+
+interface LessonInfo {
+    id: string;
+    title: string;
+    description: string | null;
+}
+
+interface ProgressInfo {
+    completedPercent: number;
+    lastUnitId: string | null;
+}
+
+interface ContinueLearning {
+    course: CourseInfo;
+    lesson: LessonInfo;
+    progress: ProgressInfo;
+}
+
 const HomeScreen: React.FC = () => {
     const [userSummary, setUserSummary] = useState<UserSummary | null>(null);
+    const [continueLearning, setContinueLearning] = useState<ContinueLearning | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        fetchUserSummary();
+        fetchData();
     }, []);
+
+    const fetchData = async () => {
+        setIsLoading(true);
+        await Promise.all([fetchUserSummary(), fetchContinueLearning()]);
+        setIsLoading(false);
+    };
 
     const fetchUserSummary = async () => {
         try {
-            setIsLoading(true);
-            setError(null);
-
-            // Get access token from storage
             const token = await AsyncStorage.getItem('access_token');
-
             if (!token) {
                 setError('Chưa đăng nhập');
-                setIsLoading(false);
                 return;
             }
 
@@ -69,14 +92,35 @@ const HomeScreen: React.FC = () => {
         } catch (err) {
             console.error('Error fetching user summary:', err);
             setError('Không thể kết nối đến server');
-        } finally {
-            setIsLoading(false);
+        }
+    };
+
+    const fetchContinueLearning = async () => {
+        try {
+            const token = await AsyncStorage.getItem('access_token');
+            if (!token) return;
+
+            const response = await fetch(`${API_BASE_URL}/api/v1/learning/continue`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (response.ok) {
+                const data: ContinueLearning = await response.json();
+                setContinueLearning(data);
+            }
+        } catch (err) {
+            console.error('Error fetching continue learning:', err);
         }
     };
 
     const getGreetingText = (): string => {
         if (userSummary?.greeting) {
-            return `CHÀO BUỔI ${userSummary.greeting.toUpperCase()}`;
+            // API already returns full greeting like "Chào buổi tối"
+            return userSummary.greeting.toUpperCase();
         }
         const hour = new Date().getHours();
         if (hour < 12) return 'CHÀO BUỔI SÁNG';
@@ -132,38 +176,56 @@ const HomeScreen: React.FC = () => {
                 </View>
 
                 {/* Main Lesson Card */}
-                <Card style={styles.lessonCard} variant="elevated">
-                    <View style={styles.lessonCardContent}>
-                        <View style={styles.lessonTextContent}>
-                            <View style={styles.pinyinBadge}>
-                                <Text style={styles.pinyinBadgeText}>{currentLesson.pinyin}</Text>
+                {continueLearning && (
+                    <Card style={styles.lessonCard} variant="elevated">
+                        <View style={styles.lessonCardContent}>
+                            <View style={styles.lessonTextContent}>
+                                <View style={styles.pinyinBadge}>
+                                    <Text style={styles.pinyinBadgeText}>{continueLearning.course.level}</Text>
+                                </View>
+                                <Text style={styles.chineseText}>你好</Text>
                             </View>
-                            <Text style={styles.chineseText}>{currentLesson.chinesePhrase}</Text>
-                        </View>
-                        <View style={styles.illustrationContainer}>
-                            <View style={styles.illustration}>
-                                <Text style={styles.illustrationEmoji}>👩🏻</Text>
+                            <View style={styles.illustrationContainer}>
+                                <View style={styles.illustration}>
+                                    <Text style={styles.illustrationEmoji}>👩🏻</Text>
+                                </View>
                             </View>
                         </View>
-                    </View>
-                </Card>
+                    </Card>
+                )}
 
                 {/* Continue Learning Section */}
-                <View style={styles.continueSection}>
-                    <Text style={styles.sectionLabel}>TIẾP TỤC HỌC</Text>
-                    <Text style={styles.lessonTitle}>
-                        {currentLesson.level} – Bài {currentLesson.baiNumber}: {currentLesson.title}
-                    </Text>
-                    <Text style={styles.lessonDescription}>{currentLesson.description}</Text>
-                    <Button
-                        title="Tiếp tục học"
-                        onPress={() => { }}
-                        icon={<Feather name="play" size={16} color={COLORS.textWhite} />}
-                        iconPosition="right"
-                        fullWidth
-                        style={styles.continueButton}
-                    />
-                </View>
+                {continueLearning && (
+                    <View style={styles.continueSection}>
+                        <Text style={styles.sectionLabel}>TIẾP TỤC HỌC</Text>
+                        <Text style={styles.lessonTitle}>
+                            {continueLearning.course.level} – {continueLearning.lesson.title}
+                        </Text>
+                        {continueLearning.lesson.description && (
+                            <Text style={styles.lessonDescription}>
+                                {continueLearning.lesson.description}
+                            </Text>
+                        )}
+                        <ProgressBar
+                            progress={continueLearning.progress.completedPercent}
+                            height={6}
+                            backgroundColor={COLORS.progressTrack}
+                            progressColor={COLORS.primary}
+                            style={styles.lessonProgressBar}
+                        />
+                        <Text style={styles.progressText}>
+                            Hoàn thành {Math.round(continueLearning.progress.completedPercent)}%
+                        </Text>
+                        <Button
+                            title="Tiếp tục học"
+                            onPress={() => { }}
+                            icon={<Feather name="play" size={16} color={COLORS.textWhite} />}
+                            iconPosition="right"
+                            fullWidth
+                            style={styles.continueButton}
+                        />
+                    </View>
+                )}
 
                 {/* Quick Actions */}
                 <View style={styles.quickActionsContainer}>
@@ -379,6 +441,14 @@ const styles = StyleSheet.create({
     },
     continueButton: {
         marginTop: SPACING.sm,
+    },
+    lessonProgressBar: {
+        marginBottom: SPACING.xs,
+    },
+    progressText: {
+        fontSize: FONT_SIZES.captionSmall,
+        color: COLORS.textSecondary,
+        marginBottom: SPACING.sm,
     },
     quickActionsContainer: {
         marginBottom: SPACING.lg,

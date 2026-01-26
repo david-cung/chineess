@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
 // Complete auth session for web
@@ -79,6 +80,9 @@ export const useGoogleAuth = () => {
             const data = await res.json();
 
             if (res.ok && data.access_token) {
+                // Save token to AsyncStorage
+                await AsyncStorage.setItem('access_token', data.access_token);
+
                 // Login successful
                 setAccessToken(data.access_token);
                 setUser(data.user || null);
