@@ -9,7 +9,6 @@ import {
     StatusBar,
     Image,
     ActivityIndicator,
-    Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
@@ -50,24 +49,23 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
         }
     };
 
-    // Show success message when logged in
+    // Navigate to home when logged in successfully
     React.useEffect(() => {
         if (user && accessToken) {
             console.log('User logged in:', user);
             console.log('Access token:', accessToken);
-            // TODO: Navigate to home screen or save token
-            Alert.alert(
-                'Đăng nhập thành công!',
-                `Chào mừng ${user.name || user.email}`,
-                [{ text: 'OK' }]
-            );
+            // Navigate to home screen
+            navigation?.reset({
+                index: 0,
+                routes: [{ name: 'MainTabs' }],
+            });
         }
-    }, [user, accessToken]);
+    }, [user, accessToken, navigation]);
 
-    // Show error alert
+    // Log error
     React.useEffect(() => {
         if (error) {
-            Alert.alert('Lỗi đăng nhập', error, [{ text: 'OK' }]);
+            console.error('Login error:', error);
         }
     }, [error]);
 

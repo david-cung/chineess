@@ -1,19 +1,23 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
 
 // Complete auth session for web
 WebBrowser.maybeCompleteAuthSession();
 
-// API endpoint for Google auth
-const GOOGLE_AUTH_API = 'http://localhost:8000/auth/google';
+// Get config from expo extra
+const expoConfig = Constants.expoConfig?.extra;
 
-// TODO: Replace with your actual Google OAuth Client IDs
+// Google OAuth Client IDs from environment
 const GOOGLE_CLIENT_ID = {
-    web: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
-    ios: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
-    android: '1073467361591-3djugot2fj1lve3t4ifaqfucav7s74j6.apps.googleusercontent.com',
+    web: expoConfig?.googleWebClientId || '',
+    ios: expoConfig?.googleIosClientId || '',
+    android: expoConfig?.googleAndroidClientId || '',
 };
+
+// API endpoint for Google auth
+const GOOGLE_AUTH_API = `${expoConfig?.apiBaseUrl || 'http://localhost:8000'}/auth/google`;
 
 export interface GoogleUser {
     id: string;

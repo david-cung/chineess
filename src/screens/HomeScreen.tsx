@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -7,15 +7,77 @@ import {
     Image,
     TouchableOpacity,
     StatusBar,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
 import { Card, Button, ProgressBar, QuickAction } from '../components';
-import { mockUser, mockDailyGoal, currentLesson } from '../constants/mockData';
+import { mockDailyGoal, currentLesson } from '../constants/mockData';
+
+// Get API base URL from config
+const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
+
+interface UserSummary {
+    id: string;
+    name: string;
+    greeting: string;
+    streakDays: number;
+    avatarUrl: string | null;
+}
 
 const HomeScreen: React.FC = () => {
-    const getGreeting = (): string => {
+    const [userSummary, setUserSummary] = useState<UserSummary | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        fetchUserSummary();
+    }, []);
+
+    const fetchUserSummary = async () => {
+        try {
+            setIsLoading(true);
+            setError(null);
+
+            // Get access token from storage
+            const token = await AsyncStorage.getItem('access_token');
+
+            if (!token) {
+                setError('Chưa đăng nhập');
+                setIsLoading(false);
+                return;
+            }
+
+            const response = await fetch(`${API_BASE_URL}/api/v1/me/summary`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (response.ok) {
+                const data: UserSummary = await response.json();
+                setUserSummary(data);
+            } else {
+                const errorData = await response.json();
+                setError(errorData.detail || 'Không thể tải thông tin');
+            }
+        } catch (err) {
+            console.error('Error fetching user summary:', err);
+            setError('Không thể kết nối đến server');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const getGreetingText = (): string => {
+        if (userSummary?.greeting) {
+            return `CHÀO BUỔI ${userSummary.greeting.toUpperCase()}`;
+        }
         const hour = new Date().getHours();
         if (hour < 12) return 'CHÀO BUỔI SÁNG';
         if (hour < 18) return 'CHÀO BUỔI CHIỀU';
@@ -24,6 +86,10 @@ const HomeScreen: React.FC = () => {
 
     const progressPercentage = (mockDailyGoal.completedMinutes / mockDailyGoal.targetMinutes) * 100;
     const remainingMinutes = mockDailyGoal.targetMinutes - mockDailyGoal.completedMinutes;
+
+    const userName = userSummary?.name || 'Bạn';
+    const streakDays = userSummary?.streakDays || 0;
+    const avatarInitial = userName.charAt(0).toUpperCase();
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
@@ -37,18 +103,31 @@ const HomeScreen: React.FC = () => {
                 <View style={styles.header}>
                     <View style={styles.headerLeft}>
                         <View style={styles.avatarContainer}>
-                            <View style={styles.avatar}>
-                                <Text style={styles.avatarText}>D</Text>
-                            </View>
+                            {userSummary?.avatarUrl ? (
+                                <Image
+                                    source={{ uri: userSummary.avatarUrl }}
+                                    style={styles.avatarImage}
+                                />
+                            ) : (
+                                <View style={styles.avatar}>
+                                    <Text style={styles.avatarText}>{avatarInitial}</Text>
+                                </View>
+                            )}
                         </View>
                         <View style={styles.greetingContainer}>
-                            <Text style={styles.greeting}>{getGreeting()}</Text>
-                            <Text style={styles.userName}>{mockUser.name} 👋</Text>
+                            {isLoading ? (
+                                <ActivityIndicator size="small" color={COLORS.primary} />
+                            ) : (
+                                <>
+                                    <Text style={styles.greeting}>{getGreetingText()}</Text>
+                                    <Text style={styles.userName}>{userName} 👋</Text>
+                                </>
+                            )}
                         </View>
                     </View>
                     <TouchableOpacity style={styles.streakBadge}>
                         <Feather name="zap" size={16} color={COLORS.accent} />
-                        <Text style={styles.streakText}>{mockUser.streak} ngày</Text>
+                        <Text style={styles.streakText}>{streakDays} ngày</Text>
                     </TouchableOpacity>
                 </View>
 
@@ -192,6 +271,11 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.primary,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    avatarImage: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
     },
     avatarText: {
         color: COLORS.textWhite,
