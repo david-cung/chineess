@@ -117,6 +117,39 @@ const HomeScreen: React.FC = () => {
         }
     };
 
+    const handleContinueLearning = async () => {
+        try {
+            const token = await AsyncStorage.getItem('access_token');
+            if (!token) {
+                console.error('No token found');
+                return;
+            }
+
+            const response = await fetch(`${API_BASE_URL}/api/v1/learning/resume`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Resume learning response:', data);
+
+                // Navigate based on response
+                // TODO: Implement navigation to learning screen
+                // data.navigation contains { screen, params }
+                alert(`Tiếp tục học: ${data.lesson.title}\nUnit: ${data.unit.type} #${data.unit.order}`);
+            } else {
+                const errorData = await response.json();
+                console.error('Resume learning error:', errorData);
+            }
+        } catch (err) {
+            console.error('Error resuming learning:', err);
+        }
+    };
+
     const getGreetingText = (): string => {
         if (userSummary?.greeting) {
             // API already returns full greeting like "Chào buổi tối"
@@ -218,7 +251,7 @@ const HomeScreen: React.FC = () => {
                         </Text>
                         <Button
                             title="Tiếp tục học"
-                            onPress={() => { }}
+                            onPress={handleContinueLearning}
                             icon={<Feather name="play" size={16} color={COLORS.textWhite} />}
                             iconPosition="right"
                             fullWidth
