@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -6,75 +6,116 @@ import {
     ScrollView,
     TouchableOpacity,
     StatusBar,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
 import { Card, ProgressBar, Badge } from '../components';
-import { mockLessons } from '../constants/mockData';
-import { Lesson } from '../types';
 
-const categories = ['HSK 1', 'HSK 2', 'Giao tiếp', 'Business'];
+// Get API base URL from config
+const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
+
+interface LessonSummary {
+    id: number;
+    title: string;
+    description: string | null;
+    hsk_level: number;
+    character_count: number;
+    vocabulary_count: number;
+    estimated_time: number;
+    completed: boolean;
+}
+
+const categories = [
+    { label: 'HSK 1', level: 1 },
+    { label: 'HSK 2', level: 2 },
+    { label: 'HSK 3', level: 3 },
+    { label: 'HSK 4', level: 4 },
+];
 
 const LessonsScreen: React.FC = () => {
-    const [selectedCategory, setSelectedCategory] = useState('HSK 1');
+    const [selectedLevel, setSelectedLevel] = useState(1);
+    const [lessons, setLessons] = useState<LessonSummary[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    const renderLessonItem = (lesson: Lesson, index: number) => {
-        const isActive = lesson.progress > 0 && lesson.progress < 100;
-        const isCompleted = lesson.isCompleted;
-        const isLocked = lesson.isLocked;
+    useEffect(() => {
+        fetchLessons(selectedLevel);
+    }, [selectedLevel]);
+
+    const fetchLessons = async (hskLevel: number) => {
+        try {
+            setIsLoading(true);
+            setError(null);
+
+            const token = await AsyncStorage.getItem('access_token');
+
+            const response = await fetch(`${API_BASE_URL}/api/lessons?hsk_level=${hskLevel}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                },
+            });
+
+            if (response.ok) {
+                const data: LessonSummary[] = await response.json();
+                setLessons(data);
+            } else {
+                const errorData = await response.json();
+                setError(errorData.detail || 'Không thể tải danh sách bài học');
+            }
+        } catch (err) {
+            console.error('Error fetching lessons:', err);
+            setError('Không thể kết nối đến server');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const renderLessonItem = (lesson: LessonSummary, index: number) => {
+        const isCompleted = lesson.completed;
 
         return (
             <TouchableOpacity
                 key={lesson.id}
-                style={[
-                    styles.lessonItem,
-                    isActive && styles.lessonItemActive,
-                ]}
-                activeOpacity={isLocked ? 1 : 0.7}
-                disabled={isLocked}
+                style={styles.lessonItem}
+                activeOpacity={0.7}
             >
                 <View style={styles.lessonItemLeft}>
                     <View
                         style={[
                             styles.lessonIcon,
                             isCompleted && styles.lessonIconCompleted,
-                            isActive && styles.lessonIconActive,
-                            isLocked && styles.lessonIconLocked,
                         ]}
                     >
                         {isCompleted ? (
                             <Feather name="check" size={20} color={COLORS.textWhite} />
-                        ) : isLocked ? (
-                            <Feather name="lock" size={18} color={COLORS.textLight} />
                         ) : (
-                            <Feather name="circle" size={20} color={isActive ? COLORS.primary : COLORS.textLight} />
+                            <Text style={styles.lessonNumber}>{index + 1}</Text>
                         )}
                     </View>
                     <View style={styles.lessonInfo}>
-                        <Text style={[styles.lessonTitle, isLocked && styles.lessonTitleLocked]}>
-                            {lesson.level.replace(/(\d)/, ' $1')} – Bài {index + 5}: {lesson.title}
+                        <Text style={styles.lessonTitle}>
+                            Bài {index + 1}: {lesson.title}
                         </Text>
-                        <Text style={[styles.lessonMeta, isLocked && styles.lessonMetaLocked]}>
-                            {lesson.vocabularyCount} từ • {lesson.duration} phút
+                        <Text style={styles.lessonMeta}>
+                            {lesson.character_count} chữ • {lesson.vocabulary_count} từ • {lesson.estimated_time} phút
                         </Text>
-                        {isActive && (
-                            <ProgressBar
-                                progress={lesson.progress}
-                                height={4}
-                                style={styles.lessonProgress}
-                            />
+                        {lesson.description && (
+                            <Text style={styles.lessonDescription} numberOfLines={2}>
+                                {lesson.description}
+                            </Text>
                         )}
                     </View>
                 </View>
                 <View style={styles.lessonItemRight}>
-                    {isActive && (
-                        <Badge text="TIẾP TỤC" variant="primary" size="small" />
-                    )}
-                    {isActive && (
-                        <Text style={styles.progressText}>{lesson.progress}%</Text>
-                    )}
-                    {!isLocked && !isActive && !isCompleted && (
+                    {isCompleted ? (
+                        <Badge text="HOÀN THÀNH" variant="success" size="small" />
+                    ) : (
                         <Feather name="chevron-right" size={20} color={COLORS.textLight} />
                     )}
                 </View>
@@ -93,9 +134,6 @@ const LessonsScreen: React.FC = () => {
                     <TouchableOpacity style={styles.headerButton}>
                         <Feather name="search" size={22} color={COLORS.textPrimary} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.headerButton}>
-                        <Feather name="settings" size={22} color={COLORS.textPrimary} />
-                    </TouchableOpacity>
                 </View>
             </View>
 
@@ -108,20 +146,20 @@ const LessonsScreen: React.FC = () => {
                 >
                     {categories.map((category) => (
                         <TouchableOpacity
-                            key={category}
+                            key={category.level}
                             style={[
                                 styles.categoryTab,
-                                selectedCategory === category && styles.categoryTabActive,
+                                selectedLevel === category.level && styles.categoryTabActive,
                             ]}
-                            onPress={() => setSelectedCategory(category)}
+                            onPress={() => setSelectedLevel(category.level)}
                         >
                             <Text
                                 style={[
                                     styles.categoryText,
-                                    selectedCategory === category && styles.categoryTextActive,
+                                    selectedLevel === category.level && styles.categoryTextActive,
                                 ]}
                             >
-                                {category}
+                                {category.label}
                             </Text>
                         </TouchableOpacity>
                     ))}
@@ -129,13 +167,36 @@ const LessonsScreen: React.FC = () => {
             </View>
 
             {/* Lessons List */}
-            <ScrollView
-                style={styles.lessonsList}
-                contentContainerStyle={styles.lessonsContent}
-                showsVerticalScrollIndicator={false}
-            >
-                {mockLessons.map((lesson, index) => renderLessonItem(lesson, index))}
-            </ScrollView>
+            {isLoading ? (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                    <Text style={styles.loadingText}>Đang tải...</Text>
+                </View>
+            ) : error ? (
+                <View style={styles.errorContainer}>
+                    <Feather name="alert-circle" size={48} color={COLORS.textLight} />
+                    <Text style={styles.errorText}>{error}</Text>
+                    <TouchableOpacity
+                        style={styles.retryButton}
+                        onPress={() => fetchLessons(selectedLevel)}
+                    >
+                        <Text style={styles.retryText}>Thử lại</Text>
+                    </TouchableOpacity>
+                </View>
+            ) : lessons.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                    <Feather name="book" size={48} color={COLORS.textLight} />
+                    <Text style={styles.emptyText}>Chưa có bài học nào</Text>
+                </View>
+            ) : (
+                <ScrollView
+                    style={styles.lessonsList}
+                    contentContainerStyle={styles.lessonsContent}
+                    showsVerticalScrollIndicator={false}
+                >
+                    {lessons.map((lesson, index) => renderLessonItem(lesson, index))}
+                </ScrollView>
+            )}
         </SafeAreaView>
     );
 };
@@ -209,10 +270,6 @@ const styles = StyleSheet.create({
         marginBottom: SPACING.md,
         ...SHADOWS.small,
     },
-    lessonItemActive: {
-        borderWidth: 2,
-        borderColor: COLORS.primary,
-    },
     lessonItemLeft: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -222,7 +279,7 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: COLORS.background,
+        backgroundColor: COLORS.progressBackground,
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: SPACING.md,
@@ -230,13 +287,10 @@ const styles = StyleSheet.create({
     lessonIconCompleted: {
         backgroundColor: COLORS.success,
     },
-    lessonIconActive: {
-        backgroundColor: COLORS.progressBackground,
-        borderWidth: 2,
-        borderColor: COLORS.primary,
-    },
-    lessonIconLocked: {
-        backgroundColor: COLORS.background,
+    lessonNumber: {
+        fontSize: FONT_SIZES.body,
+        fontWeight: '600',
+        color: COLORS.primary,
     },
     lessonInfo: {
         flex: 1,
@@ -247,27 +301,62 @@ const styles = StyleSheet.create({
         color: COLORS.textPrimary,
         marginBottom: 4,
     },
-    lessonTitleLocked: {
-        color: COLORS.textLight,
-    },
     lessonMeta: {
         fontSize: FONT_SIZES.caption,
         color: COLORS.textSecondary,
     },
-    lessonMetaLocked: {
+    lessonDescription: {
+        fontSize: FONT_SIZES.captionSmall,
         color: COLORS.textLight,
-    },
-    lessonProgress: {
-        marginTop: SPACING.sm,
+        marginTop: 4,
     },
     lessonItemRight: {
         alignItems: 'flex-end',
+        marginLeft: SPACING.sm,
     },
-    progressText: {
-        fontSize: FONT_SIZES.caption,
-        color: COLORS.primary,
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        marginTop: SPACING.md,
+        fontSize: FONT_SIZES.body,
+        color: COLORS.textSecondary,
+    },
+    errorContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: SPACING.xl,
+    },
+    errorText: {
+        marginTop: SPACING.md,
+        fontSize: FONT_SIZES.body,
+        color: COLORS.textSecondary,
+        textAlign: 'center',
+    },
+    retryButton: {
+        marginTop: SPACING.md,
+        paddingHorizontal: SPACING.lg,
+        paddingVertical: SPACING.sm,
+        backgroundColor: COLORS.primary,
+        borderRadius: BORDER_RADIUS.md,
+    },
+    retryText: {
+        fontSize: FONT_SIZES.body,
         fontWeight: '600',
-        marginTop: 4,
+        color: COLORS.textWhite,
+    },
+    emptyContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    emptyText: {
+        marginTop: SPACING.md,
+        fontSize: FONT_SIZES.body,
+        color: COLORS.textSecondary,
     },
 });
 
