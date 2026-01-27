@@ -8,6 +8,7 @@ import { COLORS, FONT_SIZES, SPACING, SHADOWS } from '../constants/theme';
 import {
     HomeScreen,
     LessonsScreen,
+    LessonDetailScreen,
     PracticeScreen,
     ProgressScreen,
     ProfileScreen,
@@ -124,7 +125,16 @@ const AppNavigator: React.FC = () => {
                 }}
             >
                 {isLoggedIn ? (
-                    <Stack.Screen name="MainTabs" component={TabNavigator} />
+                    <>
+                        <Stack.Screen name="MainTabs" component={TabNavigator} />
+                        <Stack.Screen
+                            name="LessonDetail"
+                            component={LessonDetailScreen}
+                            options={{
+                                animation: 'slide_from_right',
+                            }}
+                        />
+                    </>
                 ) : (
                     <>
                         <Stack.Screen
@@ -135,6 +145,13 @@ const AppNavigator: React.FC = () => {
                             }}
                         />
                         <Stack.Screen name="MainTabs" component={TabNavigator} />
+                        <Stack.Screen
+                            name="LessonDetail"
+                            component={LessonDetailScreen}
+                            options={{
+                                animation: 'slide_from_right',
+                            }}
+                        />
                     </>
                 )}
             </Stack.Navigator>
