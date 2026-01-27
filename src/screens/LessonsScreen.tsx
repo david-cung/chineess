@@ -35,6 +35,7 @@ const categories = [
     { label: 'HSK 2', level: 2 },
     { label: 'HSK 3', level: 3 },
     { label: 'HSK 4', level: 4 },
+    { label: 'HSK 5', level: 5 },
 ];
 
 const LessonsScreen: React.FC = () => {
