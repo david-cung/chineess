@@ -181,8 +181,17 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
 
     const handleActivityPress = (activity: Activity) => {
         if (activity.status === 'locked') return;
-        console.log('Activity pressed:', activity.id);
-        // TODO: Navigate to activity screen
+
+        if (activity.id === 'vocabulary') {
+            navigation?.navigate('Vocabulary', {
+                lessonId: lessonId,
+                hskLevel: lesson?.hsk_level || 1,
+                lessonNumber: lessonId,
+            });
+        } else {
+            console.log('Activity pressed:', activity.id);
+            // TODO: Navigate to other activity screens
+        }
     };
 
     const handleMainButton = () => {

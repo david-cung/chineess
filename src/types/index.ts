@@ -3,6 +3,7 @@ export type RootStackParamList = {
     Login: undefined;
     MainTabs: undefined;
     LessonDetail: { lessonId: number };
+    Vocabulary: { lessonId: number; hskLevel: number; lessonNumber: number };
 };
 
 export type RootTabParamList = {
