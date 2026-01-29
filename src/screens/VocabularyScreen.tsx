@@ -511,14 +511,43 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
 
             {/* Bottom Section */}
             <View style={styles.bottomContainer}>
-                {/* Next Button */}
-                <TouchableOpacity
-                    style={styles.nextButton}
-                    onPress={handleNext}
-                    disabled={currentIndex >= vocabularyList.length - 1}
-                >
-                    <Text style={styles.nextButtonText}>Tiếp theo</Text>
-                </TouchableOpacity>
+                {/* Navigation Buttons Row */}
+                <View style={styles.navigationButtonsRow}>
+                    {/* Previous Button */}
+                    <TouchableOpacity
+                        style={[
+                            styles.navButton,
+                            styles.prevButton,
+                            currentIndex <= 0 && styles.navButtonDisabled,
+                        ]}
+                        onPress={handlePrevious}
+                        disabled={currentIndex <= 0}
+                    >
+                        <Feather name="chevron-left" size={20} color={currentIndex <= 0 ? COLORS.textMuted : COLORS.textSecondary} />
+                        <Text style={[
+                            styles.navButtonText,
+                            currentIndex <= 0 && styles.navButtonTextDisabled,
+                        ]}>Quay lại</Text>
+                    </TouchableOpacity>
+
+                    {/* Next Button */}
+                    <TouchableOpacity
+                        style={[
+                            styles.navButton,
+                            styles.nextButton,
+                            currentIndex >= vocabularyList.length - 1 && styles.navButtonDisabled,
+                        ]}
+                        onPress={handleNext}
+                        disabled={currentIndex >= vocabularyList.length - 1}
+                    >
+                        <Text style={[
+                            styles.navButtonText,
+                            styles.nextButtonText,
+                            currentIndex >= vocabularyList.length - 1 && styles.navButtonTextDisabled,
+                        ]}>Tiếp theo</Text>
+                        <Feather name="chevron-right" size={20} color={currentIndex >= vocabularyList.length - 1 ? COLORS.textMuted : COLORS.cardBackground} />
+                    </TouchableOpacity>
+                </View>
 
                 {/* Remember Checkbox */}
                 <TouchableOpacity
@@ -707,18 +736,43 @@ const styles = StyleSheet.create({
         paddingBottom: 32,
         paddingTop: 16,
     },
-    nextButton: {
-        backgroundColor: COLORS.primary,
-        borderRadius: 16,
-        height: 56,
-        alignItems: 'center',
-        justifyContent: 'center',
+    navigationButtonsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: 12,
         marginBottom: 16,
     },
-    nextButtonText: {
+    navButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 16,
+        height: 56,
+        gap: 8,
+    },
+    prevButton: {
+        backgroundColor: COLORS.cardBackground,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    nextButton: {
+        backgroundColor: COLORS.primary,
+    },
+    navButtonDisabled: {
+        opacity: 0.5,
+    },
+    navButtonText: {
         fontSize: 16,
-        fontWeight: '700',
+        fontWeight: '600',
+        color: COLORS.textSecondary,
+    },
+    nextButtonText: {
         color: COLORS.cardBackground,
+        fontWeight: '700',
+    },
+    navButtonTextDisabled: {
+        color: COLORS.textMuted,
     },
     rememberContainer: {
         flexDirection: 'row',
