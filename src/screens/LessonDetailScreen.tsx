@@ -14,6 +14,7 @@ import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { ProgressBar } from '../components';
+import { trackLearningProgress } from '../utils/api';
 
 const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
 
@@ -38,6 +39,16 @@ interface LessonDetail {
     description: string | null;
     hsk_level: number;
     estimated_time: number;
+    vocabCount: number;
+    durationMinutes: number;
+    status: 'completed' | 'in_progress' | 'available' | 'locked';
+    progressPercent: number;
+    // Learned counts from API
+    learnedVocabCount: number;
+    learnedGrammarCount: number;
+    learnedListeningCount: number;
+    learnedSpeakingCount: number;
+    // Content arrays
     characters: any[];
     vocabulary: any[];
     objectives: any[];
@@ -65,15 +76,19 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
     const [error, setError] = useState<string | null>(null);
 
     // Get lesson ID from route params or default to 1
-    const lessonId = route?.params?.lessonId || 1;
+    const rawLessonId = route?.params?.lessonId || 1;
+    const lessonId = typeof rawLessonId === 'string' && rawLessonId.startsWith('lesson_')
+        ? parseInt(rawLessonId.replace('lesson_', ''), 10)
+        : rawLessonId;
 
-    // Mock progress data - will be replaced with API data
+    // Lesson Progress state
     const [progress, setProgress] = useState({
-        percent: 45,
-        vocabLearned: 5,
-        vocabTotal: 11,
-        activitiesCompleted: 2,
+        percent: 0,
+        vocabLearned: 0,
+        vocabTotal: 0,
+        activitiesCompleted: 0,
         activitiesTotal: 5,
+        status: 'available' as LessonDetail['status'],
     });
 
     useEffect(() => {
@@ -99,12 +114,19 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                 const data: LessonDetail = await response.json();
                 setLesson(data);
 
-                // Calculate progress based on vocabulary/character counts
-                const vocabTotal = data.vocabulary.length || 11;
-                setProgress(prev => ({
-                    ...prev,
-                    vocabTotal,
-                }));
+                // Map API fields to state
+                setProgress({
+                    percent: data.progressPercent || 0,
+                    vocabLearned: data.learnedVocabCount || 0,
+                    vocabTotal: data.vocabCount || data.vocabulary?.length || 0,
+                    grammarLearned: data.learnedGrammarCount || 0,
+                    grammarTotal: data.grammar?.length || 0,
+                    listeningLearned: data.learnedListeningCount || 0,
+                    speakingLearned: data.learnedSpeakingCount || 0,
+                    activitiesCompleted: data.status === 'completed' ? 5 : (data.progressPercent > 0 ? 1 : 0),
+                    activitiesTotal: 5,
+                    status: data.status || 'available',
+                });
             } else {
                 const errorData = await response.json();
                 setError(errorData.detail || 'Không thể tải bài học');
@@ -118,8 +140,9 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
     };
 
     const getActivities = (): Activity[] => {
-        const isNotStarted = progress.percent === 0;
-        const isCompleted = progress.percent === 100;
+        const isCompleted = progress.status === 'completed' || progress.percent === 100;
+        const isNotStarted = progress.status === 'available' || progress.percent === 0;
+        const isInProgress = progress.status === 'in_progress';
 
         return [
             {
@@ -133,26 +156,26 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
             {
                 id: 'sentences',
                 title: 'Câu mẫu',
-                subtitle: isCompleted ? 'Hoàn thành' : 'Chưa học',
+                subtitle: isCompleted ? 'Hoàn thành' : (progress.grammarLearned > 0 ? `Đã học ${progress.grammarLearned}/${progress.grammarTotal} câu` : 'Chưa học'),
                 icon: 'message-square',
                 iconBg: LESSON_COLORS.secondaryOrange,
-                status: isCompleted ? 'completed' : (progress.percent >= 30 ? 'available' : 'locked'),
+                status: isCompleted ? 'completed' : (progress.grammarLearned > 0 ? 'in_progress' : (progress.percent >= 30 ? 'available' : 'locked')),
             },
             {
                 id: 'listening',
                 title: 'Luyện nghe',
-                subtitle: isCompleted ? 'Hoàn thành' : 'Khóa',
+                subtitle: isCompleted ? 'Hoàn thành' : (progress.listeningLearned > 0 ? `Đã hoàn thành ${progress.listeningLearned} bài` : 'Khóa'),
                 icon: 'headphones',
-                iconBg: LESSON_COLORS.disabledBg,
-                status: isCompleted ? 'completed' : (progress.percent >= 50 ? 'available' : 'locked'),
+                iconBg: progress.listeningLearned > 0 ? LESSON_COLORS.secondaryOrange : LESSON_COLORS.disabledBg,
+                status: isCompleted ? 'completed' : (progress.listeningLearned > 0 ? 'in_progress' : (progress.percent >= 50 ? 'available' : 'locked')),
             },
             {
                 id: 'speaking',
                 title: 'Luyện nói',
-                subtitle: isCompleted ? 'Hoàn thành' : 'Khóa',
+                subtitle: isCompleted ? 'Hoàn thành' : (progress.speakingLearned > 0 ? `Đã hoàn thành ${progress.speakingLearned} bài` : 'Khóa'),
                 icon: 'mic',
-                iconBg: LESSON_COLORS.disabledBg,
-                status: isCompleted ? 'completed' : (progress.percent >= 70 ? 'available' : 'locked'),
+                iconBg: progress.speakingLearned > 0 ? LESSON_COLORS.secondaryOrange : LESSON_COLORS.disabledBg,
+                status: isCompleted ? 'completed' : (progress.speakingLearned > 0 ? 'in_progress' : (progress.percent >= 70 ? 'available' : 'locked')),
             },
             {
                 id: 'writing',
@@ -166,9 +189,9 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
     };
 
     const getButtonText = (): string => {
-        if (progress.percent === 0) return 'Bắt đầu học';
-        if (progress.percent === 100) return 'Ôn lại bài học';
-        return 'Tiếp tục bài học';
+        if (progress.status === 'completed' || progress.percent === 100) return 'Ôn lại bài học';
+        if (progress.status === 'in_progress' || progress.percent > 0) return 'Tiếp tục bài học';
+        return 'Bắt đầu học';
     };
 
     const getProgressColor = (): string => {
@@ -181,6 +204,9 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
 
     const handleActivityPress = (activity: Activity) => {
         if (activity.status === 'locked') return;
+
+        // Note: Progress tracking is done within each activity screen (e.g., VocabularyScreen)
+        // using the specific item_id from the API response
 
         if (activity.id === 'vocabulary') {
             navigation?.navigate('Vocabulary', {
@@ -342,11 +368,11 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                     <View style={styles.infoMeta}>
                         <View style={styles.infoItem}>
                             <Feather name="book" size={14} color={LESSON_COLORS.textSecondary} />
-                            <Text style={styles.infoText}>{lesson?.vocabulary.length || 11} từ vựng</Text>
+                            <Text style={styles.infoText}>{lesson?.vocabCount || lesson?.vocabulary.length || 0} từ vựng</Text>
                         </View>
                         <View style={styles.infoItem}>
                             <Feather name="clock" size={14} color={LESSON_COLORS.textSecondary} />
-                            <Text style={styles.infoText}>{lesson?.estimated_time || 10} phút</Text>
+                            <Text style={styles.infoText}>{lesson?.durationMinutes || lesson?.estimated_time || 0} phút</Text>
                         </View>
                     </View>
                     {/* Family illustration placeholder */}

@@ -50,7 +50,11 @@ interface ContinueLearning {
     progress: ProgressInfo;
 }
 
-const HomeScreen: React.FC = () => {
+interface HomeScreenProps {
+    navigation?: any;
+}
+
+const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const [userSummary, setUserSummary] = useState<UserSummary | null>(null);
     const [continueLearning, setContinueLearning] = useState<ContinueLearning | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -137,13 +141,35 @@ const HomeScreen: React.FC = () => {
                 const data = await response.json();
                 console.log('Resume learning response:', data);
 
-                // Navigate based on response
-                // TODO: Implement navigation to learning screen
-                // data.navigation contains { screen, params }
-                alert(`Tiếp tục học: ${data.lesson.title}\nUnit: ${data.unit.type} #${data.unit.order}`);
+                // Determine lesson ID and HSK level from different possible response structures
+                let rawLessonId = data.lesson?.id || data.id || data.lesson_id;
+
+                // Sanitize lessonId: remove "lesson_" prefix if it exists (e.g., "lesson_1" -> 1)
+                let lessonId: number | string = rawLessonId;
+                if (typeof rawLessonId === 'string' && rawLessonId.startsWith('lesson_')) {
+                    lessonId = parseInt(rawLessonId.replace('lesson_', ''), 10);
+                } else if (typeof rawLessonId === 'string') {
+                    const parsed = parseInt(rawLessonId, 10);
+                    if (!isNaN(parsed)) lessonId = parsed;
+                }
+
+                const hskLevelText = data.course?.level || (data.hsk_level ? `HSK ${data.hsk_level}` : null);
+                const hskLevel = hskLevelText ? parseInt(hskLevelText.replace(/[^0-9]/g, '')) : (data.hsk_level || 1);
+
+                if (lessonId) {
+                    navigation?.navigate('LessonDetail', {
+                        lessonId: lessonId,
+                        hskLevel: hskLevel,
+                    });
+                } else if (data.navigation) {
+                    navigation?.navigate(data.navigation.screen, data.navigation.params);
+                } else {
+                    alert('Không tìm thấy bài học đang học dở');
+                }
             } else {
                 const errorData = await response.json();
                 console.error('Resume learning error:', errorData);
+                alert(`Lỗi: ${errorData.detail || 'Không thể tiếp tục học'}`);
             }
         } catch (err) {
             console.error('Error resuming learning:', err);

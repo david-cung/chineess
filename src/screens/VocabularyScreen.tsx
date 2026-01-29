@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Svg, Path } from 'react-native-svg';
 import * as Speech from 'expo-speech';
+import { trackLearningProgress } from '../utils/api';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -56,6 +57,9 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
     const [favorites, setFavorites] = useState<Set<number>>(new Set());
     const [remembered, setRemembered] = useState<Set<number>>(new Set());
 
+    // Lesson metadata from API
+    const [lessonInfo, setLessonInfo] = useState<{ hskLevel: number, title: string } | null>(null);
+
     // Writing practice states
     const [isWritingMode, setIsWritingMode] = useState(false);
     const [paths, setPaths] = useState<string[]>([]);
@@ -93,6 +97,13 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
 
             if (response.ok) {
                 const data = await response.json();
+
+                // Set lesson metadata
+                setLessonInfo({
+                    hskLevel: data.hsk_level,
+                    title: data.title,
+                });
+
                 // Map vocabulary data
                 const vocab = data.vocabulary?.map((v: any, index: number) => ({
                     id: v.id || index,
@@ -114,6 +125,21 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
             setIsLoading(false);
         }
     };
+
+    // Track progress when current index changes
+    useEffect(() => {
+        if (vocabularyList.length > 0 && vocabularyList[currentIndex]) {
+            const word = vocabularyList[currentIndex];
+            const timer = setTimeout(() => {
+                trackLearningProgress({
+                    item_type: 'vocabulary',
+                    item_id: word.id,
+                    completed: true,
+                });
+            }, 500); // Track after 500ms of viewing
+            return () => clearTimeout(timer);
+        }
+    }, [currentIndex, vocabularyList]);
 
     const getMockVocabulary = (): VocabularyItem[] => [
         { id: 1, word: '你好', pinyin: 'nǐ hǎo', meaning: 'Chào bạn' },
@@ -317,7 +343,9 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
                     <Feather name="chevron-left" size={24} color={COLORS.textPrimary} />
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>
-                    <Text style={styles.headerTitle}>HSK {hskLevel} – Bài {lessonNumber}</Text>
+                    <Text style={styles.headerTitle}>
+                        HSK {lessonInfo?.hskLevel || hskLevel} – {lessonInfo?.title || `Bài ${lessonNumber}`}
+                    </Text>
                     <Text style={styles.headerSubtitle}>Học từ mới</Text>
                 </View>
                 <View style={styles.progressBadge}>
