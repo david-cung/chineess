@@ -145,8 +145,6 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
 
     const getActivities = (): Activity[] => {
         const isCompleted = progress.status === 'completed' || progress.percent === 100;
-        const isNotStarted = progress.status === 'available' || progress.percent === 0;
-        const isInProgress = progress.status === 'in_progress';
 
         return [
             {
@@ -155,7 +153,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                 subtitle: isCompleted ? 'Hoàn thành' : `Đã học ${progress.vocabLearned}/${progress.vocabTotal} từ`,
                 icon: 'book-open',
                 iconBg: LESSON_COLORS.secondaryPink,
-                status: isCompleted ? 'completed' : (isNotStarted ? 'available' : 'in_progress'),
+                status: isCompleted ? 'completed' : (progress.vocabLearned > 0 ? 'in_progress' : 'available'),
             },
             {
                 id: 'sentences',
@@ -163,31 +161,23 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                 subtitle: isCompleted ? 'Hoàn thành' : (progress.grammarLearned > 0 ? `Đã học ${progress.grammarLearned}/${progress.grammarTotal} câu` : 'Chưa học'),
                 icon: 'message-square',
                 iconBg: LESSON_COLORS.secondaryOrange,
-                status: isCompleted ? 'completed' : (progress.grammarLearned > 0 ? 'in_progress' : (progress.percent >= 30 ? 'available' : 'locked')),
-            },
-            {
-                id: 'listening',
-                title: 'Luyện nghe',
-                subtitle: isCompleted ? 'Hoàn thành' : (progress.listeningLearned > 0 ? `Đã hoàn thành ${progress.listeningLearned} bài` : 'Khóa'),
-                icon: 'headphones',
-                iconBg: progress.listeningLearned > 0 ? LESSON_COLORS.secondaryOrange : LESSON_COLORS.disabledBg,
-                status: isCompleted ? 'completed' : (progress.listeningLearned > 0 ? 'in_progress' : (progress.percent >= 50 ? 'available' : 'locked')),
+                status: isCompleted ? 'completed' : (progress.grammarLearned > 0 ? 'in_progress' : 'available'),
             },
             {
                 id: 'speaking',
                 title: 'Luyện nói',
-                subtitle: isCompleted ? 'Hoàn thành' : (progress.speakingLearned > 0 ? `Đã hoàn thành ${progress.speakingLearned} bài` : 'Khóa'),
+                subtitle: isCompleted ? 'Hoàn thành' : (progress.speakingLearned > 0 ? `Đã hoàn thành ${progress.speakingLearned} bài` : 'Chưa học'),
                 icon: 'mic',
-                iconBg: progress.speakingLearned > 0 ? LESSON_COLORS.secondaryOrange : LESSON_COLORS.disabledBg,
-                status: isCompleted ? 'completed' : (progress.speakingLearned > 0 ? 'in_progress' : (progress.percent >= 70 ? 'available' : 'locked')),
+                iconBg: LESSON_COLORS.secondaryOrange,
+                status: isCompleted ? 'completed' : (progress.speakingLearned > 0 ? 'in_progress' : 'available'),
             },
             {
                 id: 'writing',
                 title: 'Viết chữ Hán',
-                subtitle: isCompleted ? 'Hoàn thành' : 'Khóa',
+                subtitle: isCompleted ? 'Hoàn thành' : 'Chưa học',
                 icon: 'edit-3',
-                iconBg: LESSON_COLORS.disabledBg,
-                status: isCompleted ? 'completed' : (progress.percent >= 90 ? 'available' : 'locked'),
+                iconBg: LESSON_COLORS.secondaryOrange,
+                status: isCompleted ? 'completed' : 'available',
             },
         ];
     };
