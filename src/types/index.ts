@@ -4,6 +4,7 @@ export type RootStackParamList = {
     MainTabs: undefined;
     LessonDetail: { lessonId: number };
     Vocabulary: { lessonId: number; hskLevel: number; lessonNumber: number };
+    Grammar: { lessonId: number; hskLevel: number };
 };
 
 export type RootTabParamList = {

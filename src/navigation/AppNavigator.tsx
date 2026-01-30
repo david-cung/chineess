@@ -10,6 +10,7 @@ import {
     LessonsScreen,
     LessonDetailScreen,
     VocabularyScreen,
+    GrammarScreen,
     PracticeScreen,
     ProgressScreen,
     ProfileScreen,
@@ -142,6 +143,13 @@ const AppNavigator: React.FC = () => {
                                 animation: 'slide_from_right',
                             }}
                         />
+                        <Stack.Screen
+                            name="Grammar"
+                            component={GrammarScreen}
+                            options={{
+                                animation: 'slide_from_right',
+                            }}
+                        />
                     </>
                 ) : (
                     <>
@@ -163,6 +171,13 @@ const AppNavigator: React.FC = () => {
                         <Stack.Screen
                             name="Vocabulary"
                             component={VocabularyScreen}
+                            options={{
+                                animation: 'slide_from_right',
+                            }}
+                        />
+                        <Stack.Screen
+                            name="Grammar"
+                            component={GrammarScreen}
                             options={{
                                 animation: 'slide_from_right',
                             }}

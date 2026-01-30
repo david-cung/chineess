@@ -208,6 +208,11 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                 hskLevel: lesson?.hsk_level || 1,
                 lessonNumber: lessonId,
             });
+        } else if (activity.id === 'sentences') {
+            navigation?.navigate('Grammar', {
+                lessonId: lessonId,
+                hskLevel: lesson?.hsk_level || 1,
+            });
         } else {
             console.log('Activity pressed:', activity.id);
             // TODO: Navigate to other activity screens
