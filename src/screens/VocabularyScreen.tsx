@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -10,6 +10,7 @@ import {
     ScrollView,
     Animated,
     PanResponder,
+    Modal,
 } from 'react-native';
 import { Svg, Path } from 'react-native-svg';
 import * as Speech from 'expo-speech';
@@ -36,12 +37,21 @@ const COLORS = {
     success: '#4CAF50',
 };
 
+// Example sentence structure
+interface ExampleSentence {
+    id: number;
+    chinese: string;
+    pinyin: string;
+    vietnamese: string;
+}
+
 interface VocabularyItem {
     id: number;
     word: string;
     pinyin: string;
     meaning: string;
     audio_url?: string;
+    examples?: ExampleSentence[];
 }
 
 interface VocabularyScreenProps {
@@ -66,6 +76,10 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
     const [currentPath, setCurrentPath] = useState<string>('');
     const [isDrawing, setIsDrawing] = useState(false);
     const activePathRef = useRef<string>('');
+
+    // Examples modal states
+    const [showExamplesModal, setShowExamplesModal] = useState(false);
+    const [currentExampleIndex, setCurrentExampleIndex] = useState(0);
 
     // Get lesson ID and HSK level from route params
     const lessonId = route?.params?.lessonId || 1;
@@ -104,13 +118,19 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
                     title: data.title,
                 });
 
-                // Map vocabulary data
+                // Map vocabulary data with examples
                 const vocab = data.vocabulary?.map((v: any, index: number) => ({
                     id: v.id || index,
                     word: v.word || v.character || '你好',
                     pinyin: v.pinyin || 'nǐ hǎo',
                     meaning: v.meaning || v.translation || 'Xin chào',
                     audio_url: v.audio_url,
+                    examples: v.examples?.map((ex: any, idx: number) => ({
+                        id: ex.id || `${v.id}_${idx}`,
+                        chinese: ex.chinese || ex.sentence || '',
+                        pinyin: ex.pinyin || ex.sentence_pinyin || '',
+                        vietnamese: ex.vietnamese || ex.translation || '',
+                    })) || [],
                 })) || getMockVocabulary();
 
                 setVocabularyList(vocab);
@@ -142,18 +162,69 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
     }, [currentIndex, vocabularyList]);
 
     const getMockVocabulary = (): VocabularyItem[] => [
-        { id: 1, word: '你好', pinyin: 'nǐ hǎo', meaning: 'Chào bạn' },
-        { id: 2, word: '谢谢', pinyin: 'xiè xiè', meaning: 'Cảm ơn' },
-        { id: 3, word: '再见', pinyin: 'zài jiàn', meaning: 'Tạm biệt' },
-        { id: 4, word: '对不起', pinyin: 'duì bù qǐ', meaning: 'Xin lỗi' },
-        { id: 5, word: '没关系', pinyin: 'méi guān xì', meaning: 'Không sao' },
-        { id: 6, word: '请', pinyin: 'qǐng', meaning: 'Xin vui lòng' },
-        { id: 7, word: '是', pinyin: 'shì', meaning: 'Là / Đúng' },
-        { id: 8, word: '不', pinyin: 'bù', meaning: 'Không' },
-        { id: 9, word: '好', pinyin: 'hǎo', meaning: 'Tốt' },
-        { id: 10, word: '我', pinyin: 'wǒ', meaning: 'Tôi' },
-        { id: 11, word: '你', pinyin: 'nǐ', meaning: 'Bạn' },
-        { id: 12, word: '他', pinyin: 'tā', meaning: 'Anh ấy' },
+        {
+            id: 1, word: '你好', pinyin: 'nǐ hǎo', meaning: 'Chào bạn', examples: [
+                { id: 101, chinese: '你好，我是小明。', pinyin: 'Nǐ hǎo, wǒ shì Xiǎo Míng.', vietnamese: 'Xin chào, tôi là Tiểu Minh.' },
+                { id: 102, chinese: '你好吗？', pinyin: 'Nǐ hǎo ma?', vietnamese: 'Bạn khỏe không?' },
+            ]
+        },
+        {
+            id: 2, word: '谢谢', pinyin: 'xiè xiè', meaning: 'Cảm ơn', examples: [
+                { id: 201, chinese: '谢谢你的帮助。', pinyin: 'Xièxiè nǐ de bāngzhù.', vietnamese: 'Cảm ơn sự giúp đỡ của bạn.' },
+                { id: 202, chinese: '非常谢谢！', pinyin: 'Fēicháng xièxiè!', vietnamese: 'Cảm ơn rất nhiều!' },
+            ]
+        },
+        {
+            id: 3, word: '再见', pinyin: 'zài jiàn', meaning: 'Tạm biệt', examples: [
+                { id: 301, chinese: '再见，明天见！', pinyin: 'Zàijiàn, míngtiān jiàn!', vietnamese: 'Tạm biệt, mai gặp lại!' },
+            ]
+        },
+        {
+            id: 4, word: '对不起', pinyin: 'duì bù qǐ', meaning: 'Xin lỗi', examples: [
+                { id: 401, chinese: '对不起，我迟到了。', pinyin: 'Duìbùqǐ, wǒ chídào le.', vietnamese: 'Xin lỗi, tôi đến muộn.' },
+            ]
+        },
+        {
+            id: 5, word: '没关系', pinyin: 'méi guān xì', meaning: 'Không sao', examples: [
+                { id: 501, chinese: '没关系，不要担心。', pinyin: 'Méi guānxi, bùyào dānxīn.', vietnamese: 'Không sao, đừng lo lắng.' },
+            ]
+        },
+        {
+            id: 6, word: '请', pinyin: 'qǐng', meaning: 'Xin vui lòng', examples: [
+                { id: 601, chinese: '请坐。', pinyin: 'Qǐng zuò.', vietnamese: 'Xin mời ngồi.' },
+                { id: 602, chinese: '请问，这是什么？', pinyin: 'Qǐngwèn, zhè shì shénme?', vietnamese: 'Xin hỏi, đây là gì?' },
+            ]
+        },
+        {
+            id: 7, word: '是', pinyin: 'shì', meaning: 'Là / Đúng', examples: [
+                { id: 701, chinese: '我是学生。', pinyin: 'Wǒ shì xuéshēng.', vietnamese: 'Tôi là học sinh.' },
+            ]
+        },
+        {
+            id: 8, word: '不', pinyin: 'bù', meaning: 'Không', examples: [
+                { id: 801, chinese: '我不喜欢。', pinyin: 'Wǒ bù xǐhuān.', vietnamese: 'Tôi không thích.' },
+            ]
+        },
+        {
+            id: 9, word: '好', pinyin: 'hǎo', meaning: 'Tốt', examples: [
+                { id: 901, chinese: '这个很好！', pinyin: 'Zhège hěn hǎo!', vietnamese: 'Cái này rất tốt!' },
+            ]
+        },
+        {
+            id: 10, word: '我', pinyin: 'wǒ', meaning: 'Tôi', examples: [
+                { id: 1001, chinese: '我叫小明。', pinyin: 'Wǒ jiào Xiǎo Míng.', vietnamese: 'Tôi tên là Tiểu Minh.' },
+            ]
+        },
+        {
+            id: 11, word: '你', pinyin: 'nǐ', meaning: 'Bạn', examples: [
+                { id: 1101, chinese: '你叫什么名字？', pinyin: 'Nǐ jiào shénme míngzi?', vietnamese: 'Bạn tên là gì?' },
+            ]
+        },
+        {
+            id: 12, word: '他', pinyin: 'tā', meaning: 'Anh ấy', examples: [
+                { id: 1201, chinese: '他是我的老师。', pinyin: 'Tā shì wǒ de lǎoshī.', vietnamese: 'Anh ấy là thầy giáo của tôi.' },
+            ]
+        },
     ];
 
     const handleGoBack = () => {
@@ -276,8 +347,31 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
     };
 
     const handleExamples = () => {
-        // TODO: Show examples modal or navigate to examples screen
-        console.log('Show examples');
+        const currentWord = vocabularyList[currentIndex];
+        if (currentWord?.examples && currentWord.examples.length > 0) {
+            setCurrentExampleIndex(0);
+            setShowExamplesModal(true);
+        }
+    };
+
+    const playExampleAudio = (text: string, rate: number = 0.75) => {
+        Speech.speak(text, {
+            language: 'zh-CN',
+            rate: rate,
+        });
+    };
+
+    const handleNextExample = () => {
+        const currentWord = vocabularyList[currentIndex];
+        if (currentWord?.examples && currentExampleIndex < currentWord.examples.length - 1) {
+            setCurrentExampleIndex(currentExampleIndex + 1);
+        }
+    };
+
+    const handlePrevExample = () => {
+        if (currentExampleIndex > 0) {
+            setCurrentExampleIndex(currentExampleIndex - 1);
+        }
     };
 
     const handleShare = () => {
@@ -565,6 +659,135 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
                     <Text style={styles.rememberText}>Đã nhớ từ này</Text>
                 </TouchableOpacity>
             </View>
+
+            {/* Examples Modal */}
+            <Modal
+                visible={showExamplesModal}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => setShowExamplesModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        {/* Modal Header */}
+                        <View style={styles.modalHeader}>
+                            <View style={styles.modalHeaderLeft}>
+                                <Text style={styles.modalVocabWord}>{currentWord?.word}</Text>
+                                <Text style={styles.modalVocabPinyin}>{currentWord?.pinyin}</Text>
+                            </View>
+                            <TouchableOpacity
+                                onPress={() => setShowExamplesModal(false)}
+                                style={styles.modalCloseButton}
+                            >
+                                <Feather name="x" size={24} color={COLORS.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Modal Title */}
+                        <Text style={styles.modalTitle}>Câu ví dụ</Text>
+
+                        {/* Example Card */}
+                        {currentWord?.examples && currentWord.examples.length > 0 && (
+                            <View style={styles.exampleCard}>
+                                {/* Chinese Sentence */}
+                                <TouchableOpacity
+                                    onPress={() => playExampleAudio(currentWord.examples![currentExampleIndex].chinese)}
+                                    style={styles.exampleSentenceContainer}
+                                >
+                                    <Text style={styles.exampleChinese}>
+                                        {currentWord.examples[currentExampleIndex].chinese}
+                                    </Text>
+                                    <Feather name="volume-2" size={18} color={COLORS.primary} />
+                                </TouchableOpacity>
+
+                                {/* Pinyin */}
+                                <Text style={styles.examplePinyin}>
+                                    {currentWord.examples[currentExampleIndex].pinyin}
+                                </Text>
+
+                                {/* Divider */}
+                                <View style={styles.exampleDivider} />
+
+                                {/* Vietnamese */}
+                                <Text style={styles.exampleVietnamese}>
+                                    {currentWord.examples[currentExampleIndex].vietnamese}
+                                </Text>
+
+                                {/* Dots Indicator */}
+                                <View style={styles.exampleDotsContainer}>
+                                    {currentWord.examples.map((_, idx) => (
+                                        <View
+                                            key={idx}
+                                            style={[
+                                                styles.exampleDot,
+                                                idx === currentExampleIndex && styles.exampleDotActive,
+                                            ]}
+                                        />
+                                    ))}
+                                </View>
+                            </View>
+                        )}
+
+                        {/* Action Buttons */}
+                        <View style={styles.exampleActionButtons}>
+                            <TouchableOpacity
+                                style={styles.exampleActionButton}
+                                onPress={() => playExampleAudio(currentWord?.examples?.[currentExampleIndex]?.chinese || '')}
+                            >
+                                <Feather name="volume-2" size={20} color={COLORS.primary} />
+                                <Text style={styles.exampleActionText}>Nghe</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.exampleActionButton}
+                                onPress={() => playExampleAudio(currentWord?.examples?.[currentExampleIndex]?.chinese || '', 0.5)}
+                            >
+                                <Feather name="clock" size={20} color={COLORS.primary} />
+                                <Text style={styles.exampleActionText}>Chậm</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Navigation */}
+                        <View style={styles.exampleNavRow}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.exampleNavButton,
+                                    styles.examplePrevButton,
+                                    currentExampleIndex === 0 && styles.exampleNavButtonDisabled,
+                                ]}
+                                onPress={handlePrevExample}
+                                disabled={currentExampleIndex === 0}
+                            >
+                                <Feather name="chevron-left" size={20} color={currentExampleIndex === 0 ? COLORS.textMuted : COLORS.textSecondary} />
+                                <Text style={[
+                                    styles.exampleNavButtonText,
+                                    currentExampleIndex === 0 && styles.exampleNavButtonTextDisabled,
+                                ]}>Trước</Text>
+                            </TouchableOpacity>
+
+                            <Text style={styles.exampleCounter}>
+                                {currentExampleIndex + 1} / {currentWord?.examples?.length || 0}
+                            </Text>
+
+                            <TouchableOpacity
+                                style={[
+                                    styles.exampleNavButton,
+                                    styles.exampleNextButton,
+                                    currentExampleIndex >= (currentWord?.examples?.length || 0) - 1 && styles.exampleNavButtonDisabled,
+                                ]}
+                                onPress={handleNextExample}
+                                disabled={currentExampleIndex >= (currentWord?.examples?.length || 0) - 1}
+                            >
+                                <Text style={[
+                                    styles.exampleNextButtonText,
+                                    currentExampleIndex >= (currentWord?.examples?.length || 0) - 1 && styles.exampleNavButtonTextDisabled,
+                                ]}>Tiếp</Text>
+                                <Feather name="chevron-right" size={20} color={currentExampleIndex >= (currentWord?.examples?.length || 0) - 1 ? COLORS.textMuted : COLORS.cardBackground} />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 };
@@ -837,6 +1060,168 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: COLORS.border,
         overflow: 'hidden',
+    },
+    // Examples Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'flex-end',
+    },
+    modalContent: {
+        backgroundColor: COLORS.cardBackground,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 24,
+        paddingBottom: 40,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    modalHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    modalVocabWord: {
+        fontSize: 28,
+        fontWeight: '700',
+        color: COLORS.primary,
+    },
+    modalVocabPinyin: {
+        fontSize: 16,
+        color: COLORS.textSecondary,
+    },
+    modalCloseButton: {
+        padding: 8,
+    },
+    modalTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.textMuted,
+        marginBottom: 16,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    exampleCard: {
+        backgroundColor: COLORS.background,
+        borderRadius: 16,
+        padding: 20,
+        alignItems: 'center',
+    },
+    exampleSentenceContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    exampleChinese: {
+        fontSize: 22,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        textAlign: 'center',
+    },
+    examplePinyin: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        marginTop: 8,
+        textAlign: 'center',
+    },
+    exampleDivider: {
+        width: '60%',
+        height: 1,
+        backgroundColor: COLORS.border,
+        marginVertical: 16,
+    },
+    exampleVietnamese: {
+        fontSize: 16,
+        fontWeight: '500',
+        color: COLORS.textPrimary,
+        textAlign: 'center',
+    },
+    exampleDotsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: 6,
+        marginTop: 16,
+    },
+    exampleDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: COLORS.border,
+    },
+    exampleDotActive: {
+        backgroundColor: COLORS.primary,
+        width: 18,
+        borderRadius: 3,
+    },
+    exampleActionButtons: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: 24,
+        marginTop: 20,
+    },
+    exampleActionButton: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: COLORS.primaryLight,
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        borderRadius: 16,
+        minWidth: 80,
+    },
+    exampleActionText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: COLORS.primary,
+        marginTop: 4,
+    },
+    exampleNavRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 20,
+        gap: 12,
+    },
+    exampleNavButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 16,
+        height: 48,
+        gap: 4,
+    },
+    examplePrevButton: {
+        backgroundColor: COLORS.background,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    exampleNextButton: {
+        backgroundColor: COLORS.primary,
+    },
+    exampleNavButtonDisabled: {
+        opacity: 0.5,
+    },
+    exampleNavButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.textSecondary,
+    },
+    exampleNextButtonText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: COLORS.cardBackground,
+    },
+    exampleNavButtonTextDisabled: {
+        color: COLORS.textMuted,
+    },
+    exampleCounter: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.textSecondary,
     },
 });
 
