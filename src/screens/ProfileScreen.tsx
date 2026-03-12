@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import { useNavigation, CommonActions } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
 import { Card, Button } from '../components';
 import { mockUser } from '../constants/mockData';
@@ -56,8 +58,24 @@ const SettingItem: React.FC<SettingItemProps> = ({
 );
 
 const ProfileScreen: React.FC = () => {
+    const navigation = useNavigation();
     const [darkMode, setDarkMode] = useState(false);
     const [offlineDownload, setOfflineDownload] = useState(true);
+
+    const handleLogout = async () => {
+        try {
+            await AsyncStorage.removeItem('access_token');
+            // Navigate back to Login screen
+            navigation.dispatch(
+                CommonActions.reset({
+                    index: 0,
+                    routes: [{ name: 'Login' }],
+                })
+            );
+        } catch (error) {
+            console.error('Error logging out:', error);
+        }
+    };
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
@@ -179,7 +197,7 @@ const ProfileScreen: React.FC = () => {
                 </Card>
 
                 {/* Logout */}
-                <TouchableOpacity style={styles.logoutButton}>
+                <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
                     <Feather name="log-out" size={18} color={COLORS.primary} />
                     <Text style={styles.logoutText}>Đăng xuất</Text>
                 </TouchableOpacity>
