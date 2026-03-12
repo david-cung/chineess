@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -8,15 +8,22 @@ import {
     StatusBar,
     ActivityIndicator,
     Image,
+    Modal,
+    Dimensions,
+    Animated,
+    PanResponder,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import * as Speech from 'expo-speech';
+import { Audio } from 'expo-av';
 import { ProgressBar } from '../components';
-import { trackLearningProgress } from '../utils/api';
+import { trackLearningProgress, analyzePronunciation, PronunciationResult } from '../utils/api';
 
 const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Design System Colors
 const LESSON_COLORS = {
@@ -74,6 +81,21 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
     const [lesson, setLesson] = useState<LessonDetail | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Vocabulary Learning Mode states
+    const [isLearningMode, setIsLearningMode] = useState(false);
+    const [currentVocabIndex, setCurrentVocabIndex] = useState(0);
+    const [learnedWords, setLearnedWords] = useState<Set<number>>(new Set());
+    const [favorites, setFavorites] = useState<Set<number>>(new Set());
+    const [isSpeaking, setIsSpeaking] = useState(false);
+    const [activeView, setActiveView] = useState<'card' | 'examples' | 'writing' | 'pronunciation'>('card');
+
+    // Recording states for pronunciation practice
+    const [isRecording, setIsRecording] = useState(false);
+    const [recording, setRecording] = useState<Audio.Recording | null>(null);
+    const [recordingUri, setRecordingUri] = useState<string | null>(null);
+    const [pronunciationResult, setPronunciationResult] = useState<PronunciationResult | null>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
 
     // Get lesson ID from route params or default to 1
     const rawLessonId = route?.params?.lessonId || 1;
@@ -219,9 +241,163 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
         }
     };
 
+    // Vocabulary Learning Functions
+    const vocabularyList = lesson?.vocabulary || [];
+    const currentWord = vocabularyList[currentVocabIndex];
+
     const handleMainButton = () => {
-        console.log('Main button pressed, progress:', progress.percent);
-        // TODO: Navigate to learning screen
+        if (vocabularyList.length > 0) {
+            setIsLearningMode(true);
+            setCurrentVocabIndex(0);
+        }
+    };
+
+    const closeLearningMode = () => {
+        setIsLearningMode(false);
+        // Refresh lesson data to get updated progress
+        fetchLessonDetail();
+    };
+
+    const handleNextVocab = () => {
+        if (currentVocabIndex < vocabularyList.length - 1) {
+            // Mark current word as learned
+            if (currentWord) {
+                setLearnedWords(prev => new Set(prev).add(currentWord.id));
+                // Track progress to API
+                trackLearningProgress({
+                    item_type: 'vocabulary',
+                    item_id: currentWord.id,
+                    completed: true,
+                });
+            }
+            setCurrentVocabIndex(currentVocabIndex + 1);
+        }
+    };
+
+    const handlePrevVocab = () => {
+        if (currentVocabIndex > 0) {
+            setCurrentVocabIndex(currentVocabIndex - 1);
+        }
+    };
+
+    const speakWord = (text: string) => {
+        if (!text) return;
+
+        if (isSpeaking) {
+            // Stop current speech
+            if (typeof window !== 'undefined' && window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            } else {
+                Speech.stop();
+            }
+            setIsSpeaking(false);
+        } else {
+            setIsSpeaking(true);
+
+            // Use Web Speech API for web platform
+            if (typeof window !== 'undefined' && window.speechSynthesis) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'zh-CN';
+                utterance.rate = 0.8;
+                utterance.onend = () => setIsSpeaking(false);
+                utterance.onerror = () => setIsSpeaking(false);
+                window.speechSynthesis.speak(utterance);
+            } else {
+                // Use expo-speech for native platforms
+                Speech.speak(text, {
+                    language: 'zh-CN',
+                    rate: 0.8,
+                    onDone: () => setIsSpeaking(false),
+                    onError: () => setIsSpeaking(false),
+                });
+            }
+        }
+    };
+
+    const toggleFavorite = () => {
+        if (currentWord) {
+            setFavorites(prev => {
+                const newFavorites = new Set(prev);
+                if (newFavorites.has(currentWord.id)) {
+                    newFavorites.delete(currentWord.id);
+                } else {
+                    newFavorites.add(currentWord.id);
+                }
+                return newFavorites;
+            });
+        }
+    };
+
+    const isFavorite = currentWord ? favorites.has(currentWord.id) : false;
+
+    // Recording Functions for Pronunciation Practice
+    const startRecording = async () => {
+        try {
+            // Reset previous result
+            setPronunciationResult(null);
+            setRecordingUri(null);
+
+            // Request permissions
+            const permission = await Audio.requestPermissionsAsync();
+            if (permission.status !== 'granted') {
+                console.log('Permission to access microphone was denied');
+                return;
+            }
+
+            // Set audio mode for recording
+            await Audio.setAudioModeAsync({
+                allowsRecordingIOS: true,
+                playsInSilentModeIOS: true,
+            });
+
+            // Start recording
+            const { recording: newRecording } = await Audio.Recording.createAsync(
+                Audio.RecordingOptionsPresets.HIGH_QUALITY
+            );
+            setRecording(newRecording);
+            setIsRecording(true);
+            console.log('Recording started');
+        } catch (err) {
+            console.error('Failed to start recording', err);
+        }
+    };
+
+    const stopRecording = async () => {
+        console.log('Stopping recording...');
+        if (!recording) return;
+
+        try {
+            setIsRecording(false);
+            await recording.stopAndUnloadAsync();
+            await Audio.setAudioModeAsync({
+                allowsRecordingIOS: false,
+            });
+            const uri = recording.getURI();
+            setRecording(null);
+            setRecordingUri(uri);
+            console.log('Recording stopped and stored at', uri);
+
+            // Start analyzing
+            if (uri && currentWord) {
+                setIsAnalyzing(true);
+                const result = await analyzePronunciation(
+                    uri,
+                    currentWord.word || currentWord.character,
+                    currentWord.pinyin
+                );
+                setPronunciationResult(result);
+                setIsAnalyzing(false);
+            }
+        } catch (err) {
+            console.error('Failed to stop recording', err);
+            setIsRecording(false);
+            setIsAnalyzing(false);
+        }
+    };
+
+    const resetRecording = () => {
+        setPronunciationResult(null);
+        setRecordingUri(null);
     };
 
     const renderActivityItem = (activity: Activity) => {
@@ -379,12 +555,6 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                         <Text style={styles.illustrationEmoji}>👨‍👩‍👧‍👦</Text>
                     </View>
                 </View>
-
-                {/* Activities Section */}
-                <View style={styles.activitiesSection}>
-                    <Text style={styles.sectionTitle}>Hoạt động học tập</Text>
-                    {getActivities().map(renderActivityItem)}
-                </View>
             </ScrollView>
 
             {/* Sticky Bottom Button */}
@@ -396,9 +566,394 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                     ]}
                     onPress={handleMainButton}
                 >
+                    <Feather name="play-circle" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
                     <Text style={styles.mainButtonText}>{getButtonText()}</Text>
                 </TouchableOpacity>
             </View>
+
+            {/* Vocabulary Learning Modal */}
+            <Modal
+                visible={isLearningMode}
+                animationType="slide"
+                presentationStyle="fullScreen"
+                onRequestClose={closeLearningMode}
+            >
+                <SafeAreaView style={styles.learningModal} edges={['top', 'bottom']}>
+                    {/* Learning Modal Header */}
+                    <View style={styles.learningHeader}>
+                        <TouchableOpacity onPress={closeLearningMode} style={styles.closeButton}>
+                            <Feather name="x" size={24} color={LESSON_COLORS.textPrimary} />
+                        </TouchableOpacity>
+                        <View style={styles.learningHeaderCenter}>
+                            <Text style={styles.learningHeaderTitle}>
+                                Bài {lessonId} - Từ vựng
+                            </Text>
+                            <Text style={styles.learningProgress}>
+                                {currentVocabIndex + 1} / {vocabularyList.length}
+                            </Text>
+                        </View>
+                        <TouchableOpacity onPress={toggleFavorite} style={styles.favoriteButton}>
+                            <Feather
+                                name={isFavorite ? "heart" : "heart"}
+                                size={24}
+                                color={isFavorite ? LESSON_COLORS.primary : LESSON_COLORS.textSecondary}
+                            />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Progress Bar */}
+                    <View style={styles.learningProgressBar}>
+                        <ProgressBar
+                            progress={(currentVocabIndex + 1) / vocabularyList.length * 100}
+                            height={4}
+                            backgroundColor="#E0E0E0"
+                            progressColor={LESSON_COLORS.primary}
+                        />
+                    </View>
+
+                    {/* Vocabulary Card */}
+                    <ScrollView style={styles.vocabCardScroll} contentContainerStyle={styles.vocabCardScrollContent}>
+                        <View style={styles.vocabCard}>
+                            {currentWord && activeView === 'card' && (
+                                <>
+                                    {/* Chinese Character */}
+                                    <Text style={styles.vocabCharacter}>
+                                        {currentWord.word || currentWord.character}
+                                    </Text>
+
+                                    {/* Pinyin */}
+                                    <TouchableOpacity
+                                        onPress={() => speakWord(currentWord.word || currentWord.character)}
+                                        style={styles.pinyinContainer}
+                                    >
+                                        <Text style={styles.vocabPinyin}>{currentWord.pinyin}</Text>
+                                        <Feather
+                                            name={isSpeaking ? "volume-2" : "volume-2"}
+                                            size={24}
+                                            color={isSpeaking ? LESSON_COLORS.primary : LESSON_COLORS.textSecondary}
+                                        />
+                                    </TouchableOpacity>
+
+                                    {/* Divider */}
+                                    <View style={styles.vocabDivider} />
+
+                                    {/* Vietnamese Meaning */}
+                                    <Text style={styles.vocabMeaning}>
+                                        {currentWord.meaning || currentWord.translation}
+                                    </Text>
+                                </>
+                            )}
+
+                            {/* Writing Practice View */}
+                            {currentWord && activeView === 'writing' && (
+                                <View style={styles.writingView}>
+                                    {/* Word Header */}
+                                    <View style={styles.viewHeader}>
+                                        <Text style={styles.viewHeaderWord}>
+                                            {currentWord.word || currentWord.character}
+                                        </Text>
+                                        <Text style={styles.viewHeaderPinyin}>{currentWord.pinyin}</Text>
+                                        <Text style={styles.viewHeaderMeaning}>
+                                            {currentWord.meaning || currentWord.translation}
+                                        </Text>
+                                    </View>
+
+                                    <Text style={styles.writingInstruction}>
+                                        Tập viết nét chữ theo thứ tự
+                                    </Text>
+
+                                    {/* Writing Canvas */}
+                                    <View style={styles.writingCanvas}>
+                                        <View style={styles.writingGuide}>
+                                            <Text style={styles.writingGuideText}>
+                                                {currentWord.word || currentWord.character}
+                                            </Text>
+                                        </View>
+                                        <Text style={styles.writingHint}>
+                                            Dùng ngón tay vẽ theo nét chữ
+                                        </Text>
+                                    </View>
+
+                                    {/* Stroke Info */}
+                                    <View style={styles.strokeInfo}>
+                                        <Feather name="edit-3" size={20} color={LESSON_COLORS.primary} />
+                                        <Text style={styles.strokeText}>
+                                            Số nét: {currentWord.stroke_count || '—'}
+                                        </Text>
+                                    </View>
+
+                                    {/* Clear Button */}
+                                    <TouchableOpacity style={styles.clearButton}>
+                                        <Feather name="trash-2" size={20} color={LESSON_COLORS.textSecondary} />
+                                        <Text style={styles.clearButtonText}>Xóa và viết lại</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+
+                            {/* Examples View */}
+                            {currentWord && activeView === 'examples' && (
+                                <View style={styles.examplesView}>
+                                    {/* Word Header */}
+                                    <View style={styles.viewHeader}>
+                                        <TouchableOpacity
+                                            style={styles.wordWithSpeaker}
+                                            onPress={() => speakWord(currentWord.word || currentWord.character)}
+                                        >
+                                            <Text style={styles.viewHeaderWord}>
+                                                {currentWord.word || currentWord.character}
+                                            </Text>
+                                            <Feather
+                                                name="volume-2"
+                                                size={24}
+                                                color={isSpeaking ? LESSON_COLORS.primary : LESSON_COLORS.textSecondary}
+                                            />
+                                        </TouchableOpacity>
+                                        <Text style={styles.viewHeaderPinyin}>{currentWord.pinyin}</Text>
+                                        <Text style={styles.viewHeaderMeaning}>
+                                            {currentWord.meaning || currentWord.translation}
+                                        </Text>
+                                    </View>
+
+                                    <Text style={styles.examplesTitle}>Câu ví dụ ({currentWord.examples?.length || 0})</Text>
+
+                                    {currentWord.examples && currentWord.examples.length > 0 ? (
+                                        currentWord.examples.map((example: any, index: number) => (
+                                            <View key={index} style={styles.exampleCard}>
+                                                {/* Chinese Sentence with Speaker */}
+                                                <TouchableOpacity
+                                                    style={styles.exampleSentenceRow}
+                                                    onPress={() => speakWord(example.sentence || example.chinese)}
+                                                >
+                                                    <Text style={styles.exampleChineseText}>{example.sentence || example.chinese}</Text>
+                                                    <View style={styles.exampleSpeakerBtn}>
+                                                        <Feather name="volume-2" size={20} color={LESSON_COLORS.primary} />
+                                                    </View>
+                                                </TouchableOpacity>
+
+                                                {/* Pinyin */}
+                                                {example.pinyin && (
+                                                    <Text style={styles.examplePinyinText}>{example.pinyin}</Text>
+                                                )}
+
+                                                {/* Divider */}
+                                                <View style={styles.exampleDivider} />
+
+                                                {/* Vietnamese Translation */}
+                                                <Text style={styles.exampleVietnameseText}>{example.translation || example.vietnamese}</Text>
+                                            </View>
+                                        ))
+                                    ) : (
+                                        <View style={styles.noExamples}>
+                                            <Feather name="info" size={40} color={LESSON_COLORS.textSecondary} />
+                                            <Text style={styles.noExamplesText}>
+                                                Chưa có ví dụ cho từ "{currentWord.word || currentWord.character}"
+                                            </Text>
+                                        </View>
+                                    )}
+                                </View>
+                            )}
+
+                            {/* Pronunciation Practice View */}
+                            {currentWord && activeView === 'pronunciation' && (
+                                <View style={styles.pronunciationView}>
+                                    {/* Word Header */}
+                                    <View style={styles.viewHeader}>
+                                        <Text style={styles.pronunciationCharacter}>
+                                            {currentWord.word || currentWord.character}
+                                        </Text>
+                                        <Text style={styles.pronunciationPinyin}>{currentWord.pinyin}</Text>
+                                        <Text style={styles.viewHeaderMeaning}>
+                                            {currentWord.meaning || currentWord.translation}
+                                        </Text>
+                                    </View>
+
+                                    {/* Listen Button */}
+                                    <TouchableOpacity
+                                        style={[styles.listenButton, isSpeaking && styles.listenButtonActive]}
+                                        onPress={() => speakWord(currentWord.word || currentWord.character)}
+                                    >
+                                        <Feather
+                                            name="volume-2"
+                                            size={24}
+                                            color={isSpeaking ? '#FFFFFF' : LESSON_COLORS.primary}
+                                        />
+                                        <Text style={[styles.listenButtonText, isSpeaking && styles.listenButtonTextActive]}>
+                                            {isSpeaking ? 'Đang phát...' : 'Nghe mẫu'}
+                                        </Text>
+                                    </TouchableOpacity>
+
+                                    {/* Record Section */}
+                                    <View style={styles.recordSection}>
+                                        <Text style={styles.recordSectionTitle}>Luyện phát âm</Text>
+
+                                        {/* Recording Button */}
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.recordButton,
+                                                isRecording && styles.recordButtonActive
+                                            ]}
+                                            onPress={isRecording ? stopRecording : startRecording}
+                                            disabled={isAnalyzing}
+                                        >
+                                            {isAnalyzing ? (
+                                                <ActivityIndicator size="large" color="#FFFFFF" />
+                                            ) : (
+                                                <Feather
+                                                    name={isRecording ? "stop-circle" : "mic"}
+                                                    size={32}
+                                                    color="#FFFFFF"
+                                                />
+                                            )}
+                                        </TouchableOpacity>
+
+                                        <Text style={styles.recordHint}>
+                                            {isRecording
+                                                ? '🔴 Đang ghi âm... Nhấn để dừng'
+                                                : isAnalyzing
+                                                    ? 'Đang phân tích phát âm...'
+                                                    : 'Nhấn để ghi âm phát âm của bạn'}
+                                        </Text>
+
+                                        {/* Pronunciation Result */}
+                                        {pronunciationResult && (
+                                            <View style={styles.resultContainer}>
+                                                <View style={styles.scoreContainer}>
+                                                    <Text style={styles.scoreLabel}>Điểm phát âm</Text>
+                                                    <Text style={[
+                                                        styles.scoreValue,
+                                                        pronunciationResult.score >= 80 ? styles.scoreGood :
+                                                            pronunciationResult.score >= 60 ? styles.scoreOk :
+                                                                styles.scoreBad
+                                                    ]}>
+                                                        {pronunciationResult.score}/100
+                                                    </Text>
+                                                </View>
+
+                                                {pronunciationResult.detected_text && (
+                                                    <View style={styles.detectedTextContainer}>
+                                                        <Text style={styles.detectedTextLabel}>Phát hiện:</Text>
+                                                        <Text style={styles.detectedTextValue}>
+                                                            {pronunciationResult.detected_text}
+                                                        </Text>
+                                                    </View>
+                                                )}
+
+                                                {pronunciationResult.feedback && (
+                                                    <View style={styles.feedbackContainer}>
+                                                        <Text style={styles.feedbackLabel}>Nhận xét:</Text>
+                                                        <Text style={styles.feedbackText}>
+                                                            {pronunciationResult.feedback}
+                                                        </Text>
+                                                    </View>
+                                                )}
+
+                                                {pronunciationResult.pronunciation_issues && pronunciationResult.pronunciation_issues.length > 0 && (
+                                                    <View style={styles.issuesContainer}>
+                                                        <Text style={styles.issuesLabel}>Cần cải thiện:</Text>
+                                                        {pronunciationResult.pronunciation_issues.map((issue, index) => (
+                                                            <Text key={index} style={styles.issueItem}>• {issue}</Text>
+                                                        ))}
+                                                    </View>
+                                                )}
+
+                                                <TouchableOpacity
+                                                    style={styles.pronunciationRetryButton}
+                                                    onPress={resetRecording}
+                                                >
+                                                    <Feather name="refresh-cw" size={18} color={LESSON_COLORS.primary} />
+                                                    <Text style={styles.pronunciationRetryButtonText}>Thử lại</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        )}
+                                    </View>
+                                </View>
+                            )}
+                        </View>
+                    </ScrollView>
+
+                    {/* Action Buttons - Always visible (outside ScrollView) */}
+                    {currentWord && (
+                        <View style={styles.actionButtons}>
+                            <TouchableOpacity
+                                style={styles.actionButton}
+                                onPress={() => speakWord(currentWord.word || currentWord.character)}
+                            >
+                                <View style={[styles.actionIconContainer, isSpeaking && styles.actionIconActive]}>
+                                    <Feather name="volume-2" size={24} color={isSpeaking ? LESSON_COLORS.primary : LESSON_COLORS.textSecondary} />
+                                </View>
+                                <Text style={styles.actionButtonText}>Phát âm</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.actionButton}
+                                onPress={() => setActiveView(activeView === 'writing' ? 'card' : 'writing')}
+                            >
+                                <View style={[styles.actionIconContainer, activeView === 'writing' && styles.actionIconActive]}>
+                                    <MaterialIcons name="draw" size={24} color={activeView === 'writing' ? LESSON_COLORS.primary : LESSON_COLORS.textSecondary} />
+                                </View>
+                                <Text style={[styles.actionButtonText, activeView === 'writing' && styles.actionButtonTextActive]}>Tập viết</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.actionButton}
+                                onPress={() => setActiveView(activeView === 'examples' ? 'card' : 'examples')}
+                            >
+                                <View style={[styles.actionIconContainer, activeView === 'examples' && styles.actionIconActive]}>
+                                    <Text style={[styles.exampleIcon, activeView === 'examples' && { color: LESSON_COLORS.primary }]}>文A</Text>
+                                </View>
+                                <Text style={[styles.actionButtonText, activeView === 'examples' && styles.actionButtonTextActive]}>Ví dụ</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.actionButton}
+                                onPress={() => setActiveView(activeView === 'pronunciation' ? 'card' : 'pronunciation')}
+                            >
+                                <View style={[styles.actionIconContainer, activeView === 'pronunciation' && styles.actionIconActive]}>
+                                    <Feather name="mic" size={24} color={activeView === 'pronunciation' ? LESSON_COLORS.primary : LESSON_COLORS.textSecondary} />
+                                </View>
+                                <Text style={[styles.actionButtonText, activeView === 'pronunciation' && styles.actionButtonTextActive]}>Đọc</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
+                    {/* Navigation Controls */}
+                    <View style={styles.learningNavigation}>
+                        <TouchableOpacity
+                            style={[
+                                styles.navButton,
+                                styles.prevButton,
+                                currentVocabIndex === 0 && styles.navButtonDisabled,
+                            ]}
+                            onPress={handlePrevVocab}
+                            disabled={currentVocabIndex === 0}
+                        >
+                            <Feather name="chevron-left" size={24} color={currentVocabIndex === 0 ? LESSON_COLORS.textSecondary : LESSON_COLORS.textPrimary} />
+                            <Text style={[
+                                styles.navButtonText,
+                                currentVocabIndex === 0 && styles.navButtonTextDisabled
+                            ]}>Trước</Text>
+                        </TouchableOpacity>
+
+                        {currentVocabIndex < vocabularyList.length - 1 ? (
+                            <TouchableOpacity
+                                style={[styles.navButton, styles.nextButton]}
+                                onPress={handleNextVocab}
+                            >
+                                <Text style={styles.nextButtonText}>Tiếp theo</Text>
+                                <Feather name="chevron-right" size={24} color="#FFFFFF" />
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity
+                                style={[styles.navButton, styles.completeButton]}
+                                onPress={closeLearningMode}
+                            >
+                                <Feather name="check" size={20} color="#FFFFFF" />
+                                <Text style={styles.nextButtonText}>Hoàn thành</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                </SafeAreaView>
+            </Modal>
         </SafeAreaView>
     );
 };
@@ -657,6 +1212,7 @@ const styles = StyleSheet.create({
         backgroundColor: LESSON_COLORS.primary,
         borderRadius: 16,
         height: 56,
+        flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -667,6 +1223,546 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '700',
         color: '#FFFFFF',
+    },
+    // Vocabulary Learning Modal Styles
+    learningModal: {
+        flex: 1,
+        backgroundColor: LESSON_COLORS.background,
+    },
+    learningHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        backgroundColor: LESSON_COLORS.cardBackground,
+    },
+    closeButton: {
+        padding: 8,
+    },
+    learningHeaderCenter: {
+        alignItems: 'center',
+    },
+    learningHeaderTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: LESSON_COLORS.textPrimary,
+    },
+    learningProgress: {
+        fontSize: 14,
+        color: LESSON_COLORS.primary,
+        fontWeight: '500',
+        marginTop: 2,
+    },
+    favoriteButton: {
+        padding: 8,
+    },
+    learningProgressBar: {
+        paddingHorizontal: 20,
+        paddingVertical: 8,
+        backgroundColor: LESSON_COLORS.cardBackground,
+    },
+    vocabCard: {
+        flex: 1,
+        backgroundColor: LESSON_COLORS.cardBackground,
+        marginHorizontal: 20,
+        marginTop: 20,
+        borderRadius: 24,
+        padding: 32,
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 16,
+        elevation: 4,
+    },
+    vocabCharacter: {
+        fontSize: 72,
+        fontWeight: '300',
+        color: LESSON_COLORS.textPrimary,
+        marginBottom: 16,
+    },
+    pinyinContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        marginBottom: 20,
+    },
+    vocabPinyin: {
+        fontSize: 24,
+        color: LESSON_COLORS.primary,
+        fontWeight: '500',
+    },
+    vocabDivider: {
+        width: 60,
+        height: 2,
+        backgroundColor: LESSON_COLORS.primary,
+        marginVertical: 20,
+    },
+    vocabMeaning: {
+        fontSize: 24,
+        fontWeight: '500',
+        color: LESSON_COLORS.textSecondary,
+        textAlign: 'center',
+    },
+    exampleContainer: {
+        marginTop: 24,
+        padding: 16,
+        backgroundColor: LESSON_COLORS.secondaryPink,
+        borderRadius: 12,
+        width: '100%',
+    },
+    exampleLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: LESSON_COLORS.primary,
+        marginBottom: 8,
+        textTransform: 'uppercase',
+    },
+    exampleChinese: {
+        fontSize: 18,
+        color: LESSON_COLORS.textPrimary,
+        marginBottom: 4,
+    },
+    exampleVietnamese: {
+        fontSize: 14,
+        color: LESSON_COLORS.textSecondary,
+    },
+    learningNavigation: {
+        flexDirection: 'row',
+        paddingHorizontal: 20,
+        paddingVertical: 16,
+        gap: 12,
+        backgroundColor: LESSON_COLORS.cardBackground,
+    },
+    navButton: {
+        flex: 1,
+        height: 56,
+        borderRadius: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+    },
+    prevButton: {
+        backgroundColor: LESSON_COLORS.background,
+        borderWidth: 1,
+        borderColor: LESSON_COLORS.disabledIcon,
+    },
+    nextButton: {
+        backgroundColor: LESSON_COLORS.primary,
+    },
+    completeButton: {
+        backgroundColor: LESSON_COLORS.success,
+    },
+    navButtonDisabled: {
+        opacity: 0.5,
+    },
+    navButtonText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: LESSON_COLORS.textPrimary,
+    },
+    navButtonTextDisabled: {
+        color: LESSON_COLORS.textSecondary,
+    },
+    nextButtonText: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#FFFFFF',
+    },
+    // Action buttons styles
+    actionButtons: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        width: '100%',
+        marginTop: 32,
+        paddingTop: 24,
+        borderTopWidth: 1,
+        borderTopColor: '#E0E0E0',
+    },
+    actionButton: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    actionIconContainer: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: LESSON_COLORS.secondaryPink,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 8,
+    },
+    actionIconActive: {
+        backgroundColor: LESSON_COLORS.secondaryPink,
+        borderWidth: 2,
+        borderColor: LESSON_COLORS.primary,
+    },
+    actionButtonText: {
+        fontSize: 12,
+        fontWeight: '500',
+        color: LESSON_COLORS.textSecondary,
+    },
+    exampleIcon: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: LESSON_COLORS.textSecondary,
+    },
+    actionButtonTextActive: {
+        color: LESSON_COLORS.primary,
+    },
+    // Scroll view styles
+    vocabCardScroll: {
+        flex: 1,
+    },
+    vocabCardScrollContent: {
+        flexGrow: 1,
+    },
+    // Writing View Styles
+    writingView: {
+        alignItems: 'center',
+        width: '100%',
+    },
+    writingCharacter: {
+        fontSize: 80,
+        fontWeight: '300',
+        color: LESSON_COLORS.textPrimary,
+        marginBottom: 8,
+    },
+    writingInstruction: {
+        fontSize: 14,
+        color: LESSON_COLORS.textSecondary,
+        marginBottom: 20,
+    },
+    writingCanvas: {
+        width: '100%',
+        height: 200,
+        backgroundColor: '#F5F5F5',
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 2,
+        borderColor: '#E0E0E0',
+        borderStyle: 'dashed',
+    },
+    writingGuide: {
+        position: 'absolute',
+        opacity: 0.2,
+    },
+    writingGuideText: {
+        fontSize: 120,
+        color: LESSON_COLORS.textSecondary,
+    },
+    writingHint: {
+        fontSize: 14,
+        color: LESSON_COLORS.textSecondary,
+    },
+    strokeInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 16,
+        gap: 8,
+    },
+    strokeText: {
+        fontSize: 14,
+        color: LESSON_COLORS.textSecondary,
+    },
+    // Examples View Styles
+    examplesView: {
+        width: '100%',
+        alignItems: 'flex-start',
+    },
+    examplesTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: LESSON_COLORS.textPrimary,
+        marginBottom: 16,
+    },
+    exampleItem: {
+        width: '100%',
+        backgroundColor: LESSON_COLORS.secondaryPink,
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 12,
+    },
+    exampleCard: {
+        width: '100%',
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#F0F0F0',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    exampleSentenceRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+    },
+    exampleChineseText: {
+        fontSize: 22,
+        fontWeight: '500',
+        color: LESSON_COLORS.textPrimary,
+        flex: 1,
+        lineHeight: 32,
+    },
+    exampleSpeakerBtn: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: LESSON_COLORS.secondaryPink,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginLeft: 12,
+    },
+    examplePinyinText: {
+        fontSize: 16,
+        color: LESSON_COLORS.primary,
+        marginBottom: 12,
+    },
+    exampleDivider: {
+        height: 1,
+        backgroundColor: '#E8E8E8',
+        marginVertical: 12,
+    },
+    exampleVietnameseText: {
+        fontSize: 16,
+        color: LESSON_COLORS.textSecondary,
+        fontStyle: 'italic',
+        lineHeight: 24,
+    },
+    exampleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    examplePinyin: {
+        fontSize: 14,
+        color: LESSON_COLORS.primary,
+        marginTop: 4,
+    },
+    noExamples: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 32,
+        width: '100%',
+    },
+    noExamplesText: {
+        fontSize: 14,
+        color: LESSON_COLORS.textSecondary,
+        marginTop: 8,
+    },
+    // Pronunciation View Styles
+    pronunciationView: {
+        alignItems: 'center',
+        width: '100%',
+    },
+    pronunciationCharacter: {
+        fontSize: 64,
+        fontWeight: '300',
+        color: LESSON_COLORS.textPrimary,
+        marginBottom: 8,
+    },
+    pronunciationPinyin: {
+        fontSize: 24,
+        color: LESSON_COLORS.primary,
+        fontWeight: '500',
+        marginBottom: 24,
+    },
+    listenButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        backgroundColor: LESSON_COLORS.secondaryPink,
+        borderRadius: 24,
+        marginBottom: 32,
+    },
+    listenButtonText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: LESSON_COLORS.primary,
+    },
+    recordSection: {
+        alignItems: 'center',
+    },
+    recordButton: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: LESSON_COLORS.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 12,
+    },
+    recordHint: {
+        fontSize: 14,
+        color: LESSON_COLORS.textSecondary,
+        textAlign: 'center',
+    },
+    // View Header Styles
+    viewHeader: {
+        alignItems: 'center',
+        marginBottom: 20,
+        width: '100%',
+    },
+    viewHeaderWord: {
+        fontSize: 48,
+        fontWeight: '300',
+        color: LESSON_COLORS.textPrimary,
+    },
+    viewHeaderPinyin: {
+        fontSize: 20,
+        color: LESSON_COLORS.primary,
+        fontWeight: '500',
+        marginTop: 4,
+    },
+    viewHeaderMeaning: {
+        fontSize: 16,
+        color: LESSON_COLORS.textSecondary,
+        marginTop: 8,
+        textAlign: 'center',
+    },
+    wordWithSpeaker: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    speakerIcon: {
+        padding: 4,
+    },
+    // Clear Button
+    clearButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        backgroundColor: LESSON_COLORS.secondaryPink,
+        borderRadius: 20,
+        marginTop: 16,
+    },
+    clearButtonText: {
+        fontSize: 14,
+        color: LESSON_COLORS.textSecondary,
+    },
+    // Listen Button Active State
+    listenButtonActive: {
+        backgroundColor: LESSON_COLORS.primary,
+    },
+    listenButtonTextActive: {
+        color: '#FFFFFF',
+    },
+    // Record Section Title
+    recordSectionTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: LESSON_COLORS.textPrimary,
+        marginBottom: 16,
+    },
+    recordSubHint: {
+        fontSize: 12,
+        color: LESSON_COLORS.textSecondary,
+        textAlign: 'center',
+        marginTop: 8,
+        paddingHorizontal: 20,
+    },
+    // Recording Active State
+    recordButtonActive: {
+        backgroundColor: '#E53935',
+    },
+    // Result Container
+    resultContainer: {
+        width: '100%',
+        backgroundColor: LESSON_COLORS.secondaryPink,
+        borderRadius: 16,
+        padding: 20,
+        marginTop: 24,
+    },
+    scoreContainer: {
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    scoreLabel: {
+        fontSize: 14,
+        color: LESSON_COLORS.textSecondary,
+        marginBottom: 4,
+    },
+    scoreValue: {
+        fontSize: 36,
+        fontWeight: '700',
+    },
+    scoreGood: {
+        color: '#4CAF50',
+    },
+    scoreOk: {
+        color: '#FF9800',
+    },
+    scoreBad: {
+        color: '#E53935',
+    },
+    detectedTextContainer: {
+        marginBottom: 12,
+    },
+    detectedTextLabel: {
+        fontSize: 12,
+        color: LESSON_COLORS.textSecondary,
+        marginBottom: 4,
+    },
+    detectedTextValue: {
+        fontSize: 18,
+        fontWeight: '500',
+        color: LESSON_COLORS.textPrimary,
+    },
+    feedbackContainer: {
+        marginBottom: 12,
+    },
+    feedbackLabel: {
+        fontSize: 12,
+        color: LESSON_COLORS.textSecondary,
+        marginBottom: 4,
+    },
+    feedbackText: {
+        fontSize: 14,
+        color: LESSON_COLORS.textPrimary,
+        lineHeight: 20,
+    },
+    issuesContainer: {
+        marginBottom: 12,
+    },
+    issuesLabel: {
+        fontSize: 12,
+        color: LESSON_COLORS.textSecondary,
+        marginBottom: 8,
+    },
+    issueItem: {
+        fontSize: 14,
+        color: '#E53935',
+        marginBottom: 4,
+    },
+    pronunciationRetryButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 12,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 24,
+        marginTop: 8,
+    },
+    pronunciationRetryButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: LESSON_COLORS.primary,
     },
 });
 

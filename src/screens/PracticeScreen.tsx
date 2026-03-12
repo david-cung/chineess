@@ -14,7 +14,7 @@ import { Card, Button, Badge, ProgressBar } from '../components';
 import { mockPracticeItems, mockDailyGoal } from '../constants/mockData';
 import { PracticeItem } from '../types';
 
-const PracticeScreen: React.FC = () => {
+const PracticeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     const completedTasks = 3;
     const totalTasks = 5;
 
@@ -56,6 +56,17 @@ const PracticeScreen: React.FC = () => {
     const renderPracticeItem = (item: PracticeItem) => {
         const isAccent = item.type === 'speaking';
 
+        const handlePress = () => {
+            if (item.type === 'quiz') {
+                navigation.navigate('Quiz', { lessonId: 1 }); // Default lesson for demo
+            } else if (item.type === 'review' as any) {
+                navigation.navigate('Review');
+            } else {
+                // Other practice types can be handled here
+                console.log('Practice pressed:', item.type);
+            }
+        };
+
         return (
             <Card key={item.id} style={styles.practiceCard} variant="elevated">
                 <View style={styles.practiceCardContent}>
@@ -67,7 +78,7 @@ const PracticeScreen: React.FC = () => {
                         <Text style={styles.practiceDescription}>{item.description}</Text>
                         <Button
                             title={item.buttonText}
-                            onPress={() => { }}
+                            onPress={handlePress}
                             variant={isAccent ? 'primary' : 'outline'}
                             size="small"
                             icon={<Feather name="play" size={14} color={isAccent ? COLORS.textWhite : COLORS.primary} />}

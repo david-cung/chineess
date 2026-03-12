@@ -102,6 +102,14 @@ export const mockPracticeItems: PracticeItem[] = [
         icon: 'help-circle',
         buttonText: 'Thử ngay',
     },
+    {
+        id: '5',
+        type: 'review' as any,
+        title: 'Ôn tập SRS',
+        description: 'Ôn tập các từ vựng đã học theo thuật toán SRS',
+        icon: 'refresh-cw',
+        buttonText: 'Học ngay',
+    },
 ];
 
 export const mockAchievements: Achievement[] = [

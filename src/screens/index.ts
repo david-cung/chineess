@@ -7,3 +7,5 @@ export { default as PracticeScreen } from './PracticeScreen';
 export { default as ProgressScreen } from './ProgressScreen';
 export { default as ProfileScreen } from './ProfileScreen';
 export { default as LoginScreen } from './LoginScreen';
+export { default as ReviewScreen } from './ReviewScreen';
+export { default as QuizScreen } from './QuizScreen';

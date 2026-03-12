@@ -15,6 +15,8 @@ import {
     ProgressScreen,
     ProfileScreen,
     LoginScreen,
+    ReviewScreen,
+    QuizScreen,
 } from '../screens';
 import { RootTabParamList, RootStackParamList } from '../types';
 
@@ -150,6 +152,16 @@ const AppNavigator: React.FC = () => {
                                 animation: 'slide_from_right',
                             }}
                         />
+                        <Stack.Screen
+                            name="Review"
+                            component={ReviewScreen}
+                            options={{ animation: 'slide_from_bottom' }}
+                        />
+                        <Stack.Screen
+                            name="Quiz"
+                            component={QuizScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
                     </>
                 ) : (
                     <>
@@ -181,6 +193,16 @@ const AppNavigator: React.FC = () => {
                             options={{
                                 animation: 'slide_from_right',
                             }}
+                        />
+                        <Stack.Screen
+                            name="Review"
+                            component={ReviewScreen}
+                            options={{ animation: 'slide_from_bottom' }}
+                        />
+                        <Stack.Screen
+                            name="Quiz"
+                            component={QuizScreen}
+                            options={{ animation: 'slide_from_right' }}
                         />
                     </>
                 )}

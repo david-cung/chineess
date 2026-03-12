@@ -5,6 +5,8 @@ export type RootStackParamList = {
     LessonDetail: { lessonId: number };
     Vocabulary: { lessonId: number; hskLevel: number; lessonNumber: number };
     Grammar: { lessonId: number; hskLevel: number };
+    Review: undefined;
+    Quiz: { lessonId: number };
 };
 
 export type RootTabParamList = {
@@ -82,4 +84,75 @@ export interface Settings {
     darkMode: boolean;
     language: 'vi' | 'en';
     offlineDownload: boolean;
+}
+
+// ==================== Review Types ====================
+export interface ReviewRating {
+    id: number;
+    name: string;
+    duration_minutes: number;
+}
+
+export interface ReviewCard {
+    id: number;
+    vocabulary: Vocabulary;
+    deck: string;
+    show_next: string;
+    rating_id?: number;
+    created_at: string;
+}
+
+export interface Vocabulary {
+    id: number;
+    word: string;
+    pinyin: string;
+    meaning: string;
+    hsk_level: number;
+    audio_url?: string;
+    examples: VocabularyExample[];
+}
+
+export interface VocabularyExample {
+    id: number;
+    sentence: string;
+    pinyin: string;
+    translation: string;
+}
+
+// ==================== Quiz Types ====================
+export interface QuizQuestion {
+    id: string;
+    vocabulary_id: number;
+    question: string;
+    correct_answer: string;
+    options: string[];
+    type: 'zh_to_en' | 'en_to_zh';
+}
+
+export interface MatchingPair {
+    zh: string;
+    en: string;
+    vocabulary_id: number;
+}
+
+export interface SentenceGameQuestion {
+    sentence_id: number;
+    characters: string;
+    pinyin: string;
+    meaning: string;
+    words: string[];
+}
+
+// ==================== Statistics Types ====================
+export interface DailyStat {
+    date: string;
+    right_count: number;
+    wrong_count: number;
+}
+
+export interface StatsOverview {
+    new_words_today: number;
+    reviewed_today: number;
+    accuracy_percent: number;
+    current_streak: number;
 }

@@ -14,14 +14,28 @@ import Svg, { Path, Circle, Rect, Defs, LinearGradient, Stop } from 'react-nativ
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
 import { Card, Button, ProgressBar } from '../components';
 import { mockUser, mockAchievements, mockWeeklyStats } from '../constants/mockData';
+import { getStatsOverview } from '../utils/api';
+import { StatsOverview } from '../types';
 
 const { width } = Dimensions.get('window');
 
 const ProgressScreen: React.FC = () => {
+    const [stats, setStats] = React.useState<StatsOverview | null>(null);
+    const [isLoading, setIsLoading] = React.useState(true);
+
+    React.useEffect(() => {
+        const fetchStats = async () => {
+            const data = await getStatsOverview();
+            setStats(data);
+            setIsLoading(false);
+        };
+        fetchStats();
+    }, []);
+
     const overallProgress = 65;
     const weeklyHours = 4.5;
     const weeklyChange = 12;
-    const vocabularyGrowth = 25;
+    const vocabularyGrowth = stats?.new_words_today || 25;
     const vocabularyChange = 5;
 
     // Calculate bar chart dimensions
@@ -108,11 +122,11 @@ const ProgressScreen: React.FC = () => {
                 <View style={styles.statsRow}>
                     <Card style={styles.statCard} variant="elevated">
                         <View style={styles.statIconContainer}>
-                            <Feather name="book-open" size={20} color={COLORS.secondary} />
+                            <Feather name="check-circle" size={20} color={COLORS.success} />
                         </View>
-                        <Text style={styles.statLabel}>Từ vựng đã học</Text>
-                        <Text style={styles.statValue}>{mockUser.totalVocabulary}</Text>
-                        <Text style={styles.statUnit}>từ</Text>
+                        <Text style={styles.statLabel}>Độ chính xác</Text>
+                        <Text style={styles.statValue}>{stats?.accuracy_percent ? Math.round(stats.accuracy_percent) : 0}</Text>
+                        <Text style={styles.statUnit}>%</Text>
                     </Card>
                     <View style={{ width: SPACING.md }} />
                     <Card style={styles.statCard} variant="elevated">
@@ -120,7 +134,7 @@ const ProgressScreen: React.FC = () => {
                             <Feather name="zap" size={20} color={COLORS.accent} />
                         </View>
                         <Text style={styles.statLabel}>Ngày liên tiếp</Text>
-                        <Text style={styles.statValue}>{mockUser.consecutiveDays}</Text>
+                        <Text style={styles.statValue}>{stats?.current_streak || mockUser.consecutiveDays}</Text>
                         <Text style={styles.statUnit}>ngày</Text>
                     </Card>
                 </View>

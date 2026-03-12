@@ -16,6 +16,7 @@ import Constants from 'expo-constants';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
 import { Card, Button, ProgressBar, QuickAction } from '../components';
 import { mockDailyGoal } from '../constants/mockData';
+import { getReviewStatus } from '../utils/api';
 
 // Get API base URL from config
 const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
@@ -57,6 +58,7 @@ interface HomeScreenProps {
 const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const [userSummary, setUserSummary] = useState<UserSummary | null>(null);
     const [continueLearning, setContinueLearning] = useState<ContinueLearning | null>(null);
+    const [reviewDueCount, setReviewDueCount] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -66,7 +68,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
     const fetchData = async () => {
         setIsLoading(true);
-        await Promise.all([fetchUserSummary(), fetchContinueLearning()]);
+        await Promise.all([fetchUserSummary(), fetchContinueLearning(), fetchReviewStatus()]);
         setIsLoading(false);
     };
 
@@ -96,6 +98,15 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         } catch (err) {
             console.error('Error fetching user summary:', err);
             setError('Không thể kết nối đến server');
+        }
+    };
+
+    const fetchReviewStatus = async () => {
+        try {
+            const status = await getReviewStatus();
+            if (status) setReviewDueCount(status.due_count);
+        } catch (err) {
+            console.error('Error fetching review status:', err);
         }
     };
 
@@ -251,6 +262,28 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                             </View>
                         </View>
                     </Card>
+                )}
+
+                {/* Review Alert badge if reviews are due */}
+                {reviewDueCount > 0 && (
+                    <TouchableOpacity
+                        onPress={() => navigation?.navigate('Review')}
+                        style={styles.reviewAlert}
+                    >
+                        <View style={styles.reviewAlertLeft}>
+                            <View style={styles.reviewIconContainer}>
+                                <Feather name="refresh-cw" size={20} color="white" />
+                                <View style={styles.reviewBadge}>
+                                    <Text style={styles.reviewBadgeText}>{reviewDueCount}</Text>
+                                </View>
+                            </View>
+                            <View style={styles.reviewTextContainer}>
+                                <Text style={styles.reviewAlertTitle}>Bạn có từ vựng cần ôn tập!</Text>
+                                <Text style={styles.reviewAlertSubtitle}>Sử dụng SRS để nhớ lâu hơn</Text>
+                            </View>
+                        </View>
+                        <Feather name="chevron-right" size={20} color={COLORS.primary} />
+                    </TouchableOpacity>
                 )}
 
                 {/* Continue Learning Section */}
@@ -567,6 +600,57 @@ const styles = StyleSheet.create({
         fontSize: FONT_SIZES.bodySmall,
         color: COLORS.textSecondary,
         textAlign: 'center',
+    },
+    reviewAlert: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: COLORS.progressBackground,
+        padding: SPACING.md,
+        borderRadius: BORDER_RADIUS.lg,
+        marginBottom: SPACING.lg,
+        borderWidth: 1,
+        borderColor: COLORS.primary + '30',
+    },
+    reviewAlertLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    reviewIconContainer: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: COLORS.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: SPACING.md,
+    },
+    reviewBadge: {
+        position: 'absolute',
+        top: -4,
+        right: -4,
+        backgroundColor: COLORS.error,
+        borderRadius: 10,
+        minWidth: 18,
+        height: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 4,
+    },
+    reviewBadgeText: {
+        color: 'white',
+        fontSize: 10,
+        fontWeight: 'bold',
+    },
+    reviewTextContainer: {},
+    reviewAlertTitle: {
+        fontSize: FONT_SIZES.bodySmall,
+        fontWeight: '700',
+        color: COLORS.textPrimary,
+    },
+    reviewAlertSubtitle: {
+        fontSize: FONT_SIZES.caption,
+        color: COLORS.textSecondary,
     },
 });
 

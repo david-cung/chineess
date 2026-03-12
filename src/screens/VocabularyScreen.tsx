@@ -11,12 +11,14 @@ import {
     Animated,
     PanResponder,
     Modal,
+    Platform,
 } from 'react-native';
-import { Svg, Path } from 'react-native-svg';
+import { Svg, Path, Circle } from 'react-native-svg';
 import * as Speech from 'expo-speech';
-import { trackLearningProgress } from '../utils/api';
+import { Audio } from 'expo-av';
+import { trackLearningProgress, analyzePronunciation, PronunciationResult } from '../utils/api';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, MaterialIcons } from '@expo/vector-icons';
+import { Feather, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
@@ -80,6 +82,17 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
     // Examples modal states
     const [showExamplesModal, setShowExamplesModal] = useState(false);
     const [currentExampleIndex, setCurrentExampleIndex] = useState(0);
+
+    // Pronunciation practice states
+    const [showPronunciationModal, setShowPronunciationModal] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    const [recording, setRecording] = useState<Audio.Recording | null>(null);
+    const [recordingUri, setRecordingUri] = useState<string | null>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [pronunciationResult, setPronunciationResult] = useState<PronunciationResult | null>(null);
+    const [recordedSound, setRecordedSound] = useState<Audio.Sound | null>(null);
+    const [isPlayingBack, setIsPlayingBack] = useState(false);
+    const waveformAnim = useRef(new Animated.Value(0)).current;
 
     // Get lesson ID and HSK level from route params
     const lessonId = route?.params?.lessonId || 1;
@@ -374,9 +387,150 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
         }
     };
 
-    const handleShare = () => {
-        // TODO: Implement share functionality
-        console.log('Share vocabulary');
+    // Pronunciation practice functions
+    const handlePronunciation = async () => {
+        setShowPronunciationModal(true);
+        setPronunciationResult(null);
+        setRecordingUri(null);
+    };
+
+    const startWaveformAnimation = () => {
+        Animated.loop(
+            Animated.sequence([
+                Animated.timing(waveformAnim, {
+                    toValue: 1,
+                    duration: 500,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(waveformAnim, {
+                    toValue: 0,
+                    duration: 500,
+                    useNativeDriver: true,
+                }),
+            ])
+        ).start();
+    };
+
+    const stopWaveformAnimation = () => {
+        waveformAnim.stopAnimation();
+        waveformAnim.setValue(0);
+    };
+
+    const startRecording = async () => {
+        try {
+            console.log('Requesting permissions...');
+            const { status } = await Audio.requestPermissionsAsync();
+            if (status !== 'granted') {
+                console.error('Permission to access microphone was denied');
+                return;
+            }
+
+            await Audio.setAudioModeAsync({
+                allowsRecordingIOS: true,
+                playsInSilentModeIOS: true,
+            });
+
+            console.log('Starting recording...');
+            const { recording } = await Audio.Recording.createAsync(
+                Audio.RecordingOptionsPresets.HIGH_QUALITY
+            );
+            setRecording(recording);
+            setIsRecording(true);
+            startWaveformAnimation();
+            console.log('Recording started');
+        } catch (err) {
+            console.error('Failed to start recording', err);
+        }
+    };
+
+    const stopRecording = async () => {
+        console.log('Stopping recording...');
+        if (!recording) return;
+
+        try {
+            setIsRecording(false);
+            stopWaveformAnimation();
+            await recording.stopAndUnloadAsync();
+            await Audio.setAudioModeAsync({
+                allowsRecordingIOS: false,
+            });
+            const uri = recording.getURI();
+            setRecording(null);
+            setRecordingUri(uri);
+            console.log('Recording stopped and stored at', uri);
+
+            // Start analyzing
+            if (uri && currentWord) {
+                setIsAnalyzing(true);
+                const result = await analyzePronunciation(
+                    uri,
+                    currentWord.word,
+                    currentWord.pinyin
+                );
+                setPronunciationResult(result);
+                setIsAnalyzing(false);
+            }
+        } catch (err) {
+            console.error('Failed to stop recording', err);
+            setIsRecording(false);
+            setIsAnalyzing(false);
+        }
+    };
+
+    const playRecordedAudio = async () => {
+        if (!recordingUri) return;
+
+        try {
+            // Unload previous sound if exists
+            if (recordedSound) {
+                await recordedSound.unloadAsync();
+            }
+
+            const { sound } = await Audio.Sound.createAsync({ uri: recordingUri });
+            setRecordedSound(sound);
+            setIsPlayingBack(true);
+
+            sound.setOnPlaybackStatusUpdate((status) => {
+                if (status.isLoaded && status.didJustFinish) {
+                    setIsPlayingBack(false);
+                }
+            });
+
+            await sound.playAsync();
+        } catch (err) {
+            console.error('Failed to play recorded audio', err);
+            setIsPlayingBack(false);
+        }
+    };
+
+    const resetPronunciationModal = () => {
+        setPronunciationResult(null);
+        setRecordingUri(null);
+        setIsRecording(false);
+        setIsAnalyzing(false);
+    };
+
+    const closePronunciationModal = async () => {
+        setShowPronunciationModal(false);
+        resetPronunciationModal();
+        if (recordedSound) {
+            await recordedSound.unloadAsync();
+            setRecordedSound(null);
+        }
+    };
+
+    const getScoreColor = (score: number) => {
+        if (score >= 80) return '#4CAF50'; // Green
+        if (score >= 60) return '#FFC107'; // Yellow/Amber
+        return '#F44336'; // Red
+    };
+
+    const getScoreLabel = (score: number) => {
+        if (score >= 90) return 'Xuất sắc!';
+        if (score >= 80) return 'Rất tốt!';
+        if (score >= 70) return 'Tốt!';
+        if (score >= 60) return 'Khá!';
+        return 'Cần cải thiện';
     };
 
     if (isLoading) {
@@ -592,12 +746,12 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
 
                         <TouchableOpacity
                             style={styles.actionButton}
-                            onPress={handleShare}
+                            onPress={handlePronunciation}
                         >
                             <View style={styles.actionIconContainer}>
-                                <Feather name="share-2" size={24} color={COLORS.textSecondary} />
+                                <Feather name="mic" size={24} color={COLORS.textSecondary} />
                             </View>
-                            <Text style={styles.actionButtonText}>Chia sẻ</Text>
+                            <Text style={styles.actionButtonText}>Đọc</Text>
                         </TouchableOpacity>
                     </View>
                 </ScrollView>
@@ -785,6 +939,187 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
                                 <Feather name="chevron-right" size={20} color={currentExampleIndex >= (currentWord?.examples?.length || 0) - 1 ? COLORS.textMuted : COLORS.cardBackground} />
                             </TouchableOpacity>
                         </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Pronunciation Modal */}
+            <Modal
+                visible={showPronunciationModal}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={closePronunciationModal}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.pronunciationModalContent}>
+                        {/* Modal Header */}
+                        <View style={styles.modalHeader}>
+                            <View style={styles.modalHeaderLeft}>
+                                <Text style={styles.modalVocabWord}>{currentWord?.word}</Text>
+                                <Text style={styles.modalVocabPinyin}>{currentWord?.pinyin}</Text>
+                            </View>
+                            <TouchableOpacity
+                                onPress={closePronunciationModal}
+                                style={styles.modalCloseButton}
+                            >
+                                <Feather name="x" size={24} color={COLORS.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.modalTitle}>Luyện phát âm</Text>
+
+                        {/* Recording/Analyzing/Results View */}
+                        {!pronunciationResult && !isAnalyzing && (
+                            <View style={styles.recordingContainer}>
+                                {/* Waveform Animation */}
+                                <View style={styles.waveformContainer}>
+                                    {isRecording ? (
+                                        <View style={styles.waveformBars}>
+                                            {[...Array(5)].map((_, index) => (
+                                                <Animated.View
+                                                    key={index}
+                                                    style={[
+                                                        styles.waveformBar,
+                                                        {
+                                                            transform: [{
+                                                                scaleY: waveformAnim.interpolate({
+                                                                    inputRange: [0, 1],
+                                                                    outputRange: [0.3 + Math.random() * 0.3, 0.7 + Math.random() * 0.3],
+                                                                }),
+                                                            }],
+                                                        },
+                                                    ]}
+                                                />
+                                            ))}
+                                        </View>
+                                    ) : (
+                                        <View style={styles.microphonePrompt}>
+                                            <Feather name="mic" size={48} color={COLORS.textMuted} />
+                                            <Text style={styles.promptText}>Nhấn nút micro để ghi âm</Text>
+                                        </View>
+                                    )}
+                                </View>
+
+                                {/* Record Button */}
+                                <TouchableOpacity
+                                    style={[
+                                        styles.recordButton,
+                                        isRecording && styles.recordButtonActive,
+                                    ]}
+                                    onPress={isRecording ? stopRecording : startRecording}
+                                >
+                                    {isRecording ? (
+                                        <Feather name="square" size={32} color={COLORS.cardBackground} />
+                                    ) : (
+                                        <Feather name="mic" size={32} color={COLORS.cardBackground} />
+                                    )}
+                                </TouchableOpacity>
+                                <Text style={styles.recordHint}>
+                                    {isRecording ? 'Nhấn để dừng ghi âm' : 'Nhấn để bắt đầu ghi âm'}
+                                </Text>
+                            </View>
+                        )}
+
+                        {/* Analyzing State */}
+                        {isAnalyzing && (
+                            <View style={styles.analyzingContainer}>
+                                <ActivityIndicator size="large" color={COLORS.primary} />
+                                <Text style={styles.analyzingText}>Đang phân tích phát âm...</Text>
+                                <View style={styles.waveformBars}>
+                                    {[...Array(5)].map((_, index) => (
+                                        <Animated.View
+                                            key={index}
+                                            style={[
+                                                styles.waveformBarSmall,
+                                                {
+                                                    backgroundColor: COLORS.primary,
+                                                },
+                                            ]}
+                                        />
+                                    ))}
+                                </View>
+                            </View>
+                        )}
+
+                        {/* Results View */}
+                        {pronunciationResult && !isAnalyzing && (
+                            <View style={styles.resultsContainer}>
+                                {/* Score Circle */}
+                                <View style={[
+                                    styles.scoreCircle,
+                                    { borderColor: getScoreColor(pronunciationResult.score) }
+                                ]}>
+                                    <Text style={[
+                                        styles.scoreNumber,
+                                        { color: getScoreColor(pronunciationResult.score) }
+                                    ]}>
+                                        {pronunciationResult.score}
+                                    </Text>
+                                    <Text style={styles.scoreLabel}>điểm</Text>
+                                </View>
+
+                                <Text style={[
+                                    styles.scoreMessage,
+                                    { color: getScoreColor(pronunciationResult.score) }
+                                ]}>
+                                    {getScoreLabel(pronunciationResult.score)}
+                                </Text>
+
+                                {/* Feedback */}
+                                <View style={styles.feedbackCard}>
+                                    <Text style={styles.feedbackTitle}>Nhận xét:</Text>
+                                    <Text style={styles.feedbackText}>{pronunciationResult.feedback}</Text>
+                                </View>
+
+                                {/* Detected Text (if different from expected) */}
+                                {pronunciationResult.detected_text && (
+                                    <View style={styles.detectedTextContainer}>
+                                        <Text style={styles.detailLabel}>Phát hiện:</Text>
+                                        <Text style={styles.detectedText}>{pronunciationResult.detected_text}</Text>
+                                    </View>
+                                )}
+
+                                {/* Pronunciation Issues (if any) */}
+                                {pronunciationResult.pronunciation_issues && pronunciationResult.pronunciation_issues.length > 0 && (
+                                    <View style={styles.issuesContainer}>
+                                        <Text style={styles.feedbackTitle}>Cần cải thiện:</Text>
+                                        {pronunciationResult.pronunciation_issues.map((issue, index) => (
+                                            <Text key={index} style={styles.issueText}>• {issue}</Text>
+                                        ))}
+                                    </View>
+                                )}
+
+                                {/* Action Buttons */}
+                                <View style={styles.resultsActions}>
+                                    {/* Playback Button */}
+                                    {recordingUri && (
+                                        <TouchableOpacity
+                                            style={styles.playbackButton}
+                                            onPress={playRecordedAudio}
+                                            disabled={isPlayingBack}
+                                        >
+                                            <Feather
+                                                name={isPlayingBack ? "pause" : "play"}
+                                                size={20}
+                                                color={COLORS.primary}
+                                            />
+                                            <Text style={styles.playbackButtonText}>
+                                                {isPlayingBack ? 'Đang phát...' : 'Nghe lại'}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    )}
+
+                                    {/* Retry Button */}
+                                    <TouchableOpacity
+                                        style={styles.retryButton}
+                                        onPress={resetPronunciationModal}
+                                    >
+                                        <Feather name="refresh-cw" size={20} color={COLORS.cardBackground} />
+                                        <Text style={styles.retryButtonText}>Thử lại</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        )}
                     </View>
                 </View>
             </Modal>
@@ -1222,6 +1557,204 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
         color: COLORS.textSecondary,
+    },
+    // Pronunciation Modal Styles
+    pronunciationModalContent: {
+        backgroundColor: COLORS.cardBackground,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 24,
+        paddingBottom: 40,
+        minHeight: 400,
+    },
+    recordingContainer: {
+        alignItems: 'center',
+        paddingVertical: 24,
+    },
+    waveformContainer: {
+        height: 120,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    waveformBars: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        height: 80,
+    },
+    waveformBar: {
+        width: 8,
+        height: 60,
+        backgroundColor: COLORS.primary,
+        borderRadius: 4,
+    },
+    waveformBarSmall: {
+        width: 4,
+        height: 20,
+        borderRadius: 2,
+    },
+    microphonePrompt: {
+        alignItems: 'center',
+        gap: 12,
+    },
+    promptText: {
+        fontSize: 14,
+        color: COLORS.textMuted,
+        textAlign: 'center',
+    },
+    recordButton: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: COLORS.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+    },
+    recordButtonActive: {
+        backgroundColor: '#D32F2F',
+    },
+    recordHint: {
+        marginTop: 16,
+        fontSize: 14,
+        color: COLORS.textSecondary,
+    },
+    analyzingContainer: {
+        alignItems: 'center',
+        paddingVertical: 48,
+        gap: 16,
+    },
+    analyzingText: {
+        fontSize: 16,
+        fontWeight: '500',
+        color: COLORS.textSecondary,
+    },
+    resultsContainer: {
+        alignItems: 'center',
+        paddingTop: 16,
+    },
+    scoreCircle: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        borderWidth: 6,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    scoreNumber: {
+        fontSize: 42,
+        fontWeight: '700',
+    },
+    scoreLabel: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+    },
+    scoreMessage: {
+        fontSize: 18,
+        fontWeight: '600',
+        marginBottom: 20,
+    },
+    feedbackCard: {
+        backgroundColor: COLORS.background,
+        borderRadius: 12,
+        padding: 16,
+        width: '100%',
+        marginBottom: 16,
+    },
+    feedbackTitle: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: COLORS.textMuted,
+        marginBottom: 8,
+        textTransform: 'uppercase',
+    },
+    feedbackText: {
+        fontSize: 14,
+        color: COLORS.textPrimary,
+        lineHeight: 20,
+    },
+    detailsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        width: '100%',
+        marginBottom: 20,
+    },
+    detailItem: {
+        alignItems: 'center',
+    },
+    detailLabel: {
+        fontSize: 12,
+        color: COLORS.textMuted,
+        marginBottom: 4,
+    },
+    detailValue: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+    },
+    resultsActions: {
+        flexDirection: 'row',
+        gap: 12,
+        width: '100%',
+    },
+    playbackButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        height: 48,
+        borderRadius: 12,
+        backgroundColor: COLORS.primaryLight,
+    },
+    playbackButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.primary,
+    },
+    retryButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        height: 48,
+        borderRadius: 12,
+        backgroundColor: COLORS.primary,
+    },
+    retryButtonText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: COLORS.cardBackground,
+    },
+    detectedTextContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 16,
+    },
+    detectedText: {
+        fontSize: 20,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+    },
+    issuesContainer: {
+        backgroundColor: '#FFF3E0',
+        borderRadius: 12,
+        padding: 16,
+        width: '100%',
+        marginBottom: 16,
+    },
+    issueText: {
+        fontSize: 14,
+        color: '#E65100',
+        marginTop: 4,
     },
 });
 
