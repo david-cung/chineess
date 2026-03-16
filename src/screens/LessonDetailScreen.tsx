@@ -134,9 +134,9 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
         fetchLessonDetail();
     }, [lessonId]);
 
-    const fetchLessonDetail = async () => {
+    const fetchLessonDetail = async (silent = false) => {
         try {
-            setIsLoading(true);
+            if (!silent) setIsLoading(true);
             setError(null);
 
             const token = await AsyncStorage.getItem('access_token');
@@ -291,7 +291,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                     completed: true,
                 });
                 // Refresh progress percentage from backend
-                await fetchLessonDetail();
+                await fetchLessonDetail(true);
             }
             setCurrentVocabIndex(currentVocabIndex + 1);
         }
@@ -314,7 +314,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
         }
         setIsLearningMode(false);
         // Refresh lesson detail before going back (optional, but ensures state is accurate)
-        await fetchLessonDetail();
+        await fetchLessonDetail(true);
         // Go back to Lessons screen
         navigation?.navigate('Lessons', { hskLevel: lesson?.hsk_level || 1 });
     };
@@ -522,7 +522,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                 <View style={styles.errorContainer}>
                     <Feather name="alert-circle" size={48} color={LESSON_COLORS.disabledIcon} />
                     <Text style={styles.errorText}>{error}</Text>
-                    <TouchableOpacity style={styles.retryButton} onPress={fetchLessonDetail}>
+                    <TouchableOpacity style={styles.retryButton} onPress={() => fetchLessonDetail()}>
                         <Text style={styles.retryText}>Thử lại</Text>
                     </TouchableOpacity>
                 </View>
