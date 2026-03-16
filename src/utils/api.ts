@@ -208,3 +208,55 @@ export const getStatsOverview = async (): Promise<StatsOverview | null> => {
         return null;
     }
 };
+
+export const getCurrentGoalProgress = async (): Promise<any | null> => {
+    try {
+        const token = await AsyncStorage.getItem('access_token');
+        const response = await fetch(`${API_BASE_URL}/api/v1/stats/current-goal`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.ok ? await response.json() : null;
+    } catch (err) {
+        console.error('getCurrentGoalProgress failed:', err);
+        return null;
+    }
+};
+
+export const getWeeklyStudyTime = async (): Promise<any | null> => {
+    try {
+        const token = await AsyncStorage.getItem('access_token');
+        const response = await fetch(`${API_BASE_URL}/api/v1/stats/weekly-time`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.ok ? await response.json() : null;
+    } catch (err) {
+        console.error('getWeeklyStudyTime failed:', err);
+        return null;
+    }
+};
+
+export const getVocabularyGrowth = async (): Promise<any | null> => {
+    try {
+        const token = await AsyncStorage.getItem('access_token');
+        const response = await fetch(`${API_BASE_URL}/api/v1/stats/vocabulary-growth`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.ok ? await response.json() : null;
+    } catch (err) {
+        console.error('getVocabularyGrowth failed:', err);
+        return null;
+    }
+};
+
+export const getUserAchievements = async (): Promise<any[] | null> => {
+    try {
+        const token = await AsyncStorage.getItem('access_token');
+        const response = await fetch(`${API_BASE_URL}/api/v1/stats/achievements`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.ok ? await response.json() : null;
+    } catch (err) {
+        console.error('getUserAchievements failed:', err);
+        return null;
+    }
+};

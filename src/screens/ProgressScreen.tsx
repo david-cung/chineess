@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import {
     View,
     Text,
@@ -9,37 +9,65 @@ import {
     Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import Svg, { Path, Circle, Rect, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
 import { Card, Button, ProgressBar } from '../components';
-import { mockUser, mockAchievements, mockWeeklyStats } from '../constants/mockData';
-import { getStatsOverview } from '../utils/api';
-import { StatsOverview } from '../types';
+import { mockUser } from '../constants/mockData';
+import { getStatsOverview, getCurrentGoalProgress, getWeeklyStudyTime, getVocabularyGrowth, getUserAchievements } from '../utils/api';
+import { StatsOverview, Achievement } from '../types';
 
 const { width } = Dimensions.get('window');
 
 const ProgressScreen: React.FC = () => {
     const [stats, setStats] = React.useState<StatsOverview | null>(null);
+    const [goalProgress, setGoalProgress] = React.useState<any>(null);
+    const [weeklyTime, setWeeklyTime] = React.useState<any>(null);
+    const [vocabGrowth, setVocabGrowth] = React.useState<any>(null);
+    const [achievements, setAchievements] = React.useState<any[]>([]);
     const [isLoading, setIsLoading] = React.useState(true);
 
-    React.useEffect(() => {
-        const fetchStats = async () => {
-            const data = await getStatsOverview();
-            setStats(data);
-            setIsLoading(false);
-        };
-        fetchStats();
-    }, []);
+    useFocusEffect(
+        useCallback(() => {
+            const fetchData = async () => {
+                setIsLoading(true);
+                try {
+                    const [statsData, goalData, timeData, vocabData, achievementsData] = await Promise.all([
+                        getStatsOverview(),
+                        getCurrentGoalProgress(),
+                        getWeeklyStudyTime(),
+                        getVocabularyGrowth(),
+                        getUserAchievements()
+                    ]);
+                    
+                    setStats(statsData);
+                    setGoalProgress(goalData);
+                    setWeeklyTime(timeData);
+                    setVocabGrowth(vocabData);
+                    setAchievements(achievementsData || []);
+                } catch (error) {
+                    console.error("Error fetching progress data:", error);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            fetchData();
+        }, [])
+    );
 
-    const overallProgress = 65;
-    const weeklyHours = 4.5;
-    const weeklyChange = 12;
-    const vocabularyGrowth = stats?.new_words_today || 25;
-    const vocabularyChange = 5;
+    const overallProgress = goalProgress?.progress_percent || 0;
+    const currentHskLevel = goalProgress?.current_level || 'HSK 1';
+    
+    const weeklyHours = weeklyTime?.total_hours_this_week || 0;
+    const weeklyChange = weeklyTime?.change_percent || 0;
+    const weeklyStats = weeklyTime?.daily_stats || [];
+    
+    const vocabularyNewWords = vocabGrowth?.new_words_this_week || 0;
+    const vocabularyChange = vocabGrowth?.growth_percent || 0;
 
     // Calculate bar chart dimensions
-    const maxHours = Math.max(...mockWeeklyStats.map(s => s.hours));
+    const maxHours = Math.max(...weeklyStats.map((s: any) => s.hours), 1); // Avoid division by zero
     const barWidth = (width - SPACING.md * 2 - SPACING.lg * 2 - SPACING.sm * 6) / 7;
 
     const CircularProgress: React.FC<{ progress: number; size: number }> = ({ progress, size }) => {
@@ -75,7 +103,7 @@ const ProgressScreen: React.FC = () => {
                 </Svg>
                 <View style={styles.circularProgressContent}>
                     <Text style={styles.progressPercentage}>{progress}%</Text>
-                    <Text style={styles.progressLabel}>HSK 1</Text>
+                    <Text style={styles.progressLabel}>{currentHskLevel}</Text>
                 </View>
             </View>
         );
@@ -107,7 +135,7 @@ const ProgressScreen: React.FC = () => {
                         <CircularProgress progress={overallProgress} size={100} />
                         <View style={styles.overviewTextContent}>
                             <Text style={styles.overviewLabel}>MỤC TIÊU HIỆN TẠI</Text>
-                            <Text style={styles.overviewTitle}>Lộ trình HSK 1</Text>
+                            <Text style={styles.overviewTitle}>Lộ trình {currentHskLevel}</Text>
                             <Button
                                 title="Tiếp tục học"
                                 onPress={() => { }}
@@ -151,18 +179,18 @@ const ProgressScreen: React.FC = () => {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.achievementsScroll}
                 >
-                    {mockAchievements.map((achievement) => (
+                    {achievements.map((achievement) => (
                         <View
                             key={achievement.id}
                             style={[
                                 styles.achievementItem,
-                                !achievement.isUnlocked && styles.achievementItemLocked,
+                                !achievement.is_unlocked && styles.achievementItemLocked,
                             ]}
                         >
                             <View
                                 style={[
                                     styles.achievementIcon,
-                                    !achievement.isUnlocked && styles.achievementIconLocked,
+                                    !achievement.is_unlocked && styles.achievementIconLocked,
                                 ]}
                             >
                                 {achievement.icon === 'flame' && <Text style={styles.achievementEmoji}>🔥</Text>}
@@ -172,7 +200,7 @@ const ProgressScreen: React.FC = () => {
                             <Text
                                 style={[
                                     styles.achievementTitle,
-                                    !achievement.isUnlocked && styles.achievementTitleLocked,
+                                    !achievement.is_unlocked && styles.achievementTitleLocked,
                                 ]}
                                 numberOfLines={2}
                             >
@@ -193,9 +221,10 @@ const ProgressScreen: React.FC = () => {
                         </View>
                     </View>
                     <View style={styles.barChart}>
-                        {mockWeeklyStats.map((stat, index) => {
+                        {weeklyStats.map((stat: any, index: number) => {
                             const barHeight = (stat.hours / maxHours) * 80;
-                            const isHighlighted = index === 4; // T6
+                            // Highlight current day if possible, or omit
+                            const isHighlighted = index === 6; // Thường index cuối sẽ là hôm nay nếu mảng sort từ QK tới HT
                             return (
                                 <View key={stat.day} style={styles.barContainer}>
                                     <View
@@ -220,10 +249,10 @@ const ProgressScreen: React.FC = () => {
                 <Card style={styles.vocabCard} variant="elevated">
                     <Text style={styles.vocabTitle}>Tăng trưởng từ vựng</Text>
                     <View style={styles.vocabValueRow}>
-                        <Text style={styles.vocabValue}>+{vocabularyGrowth} từ</Text>
+                        <Text style={styles.vocabValue}>+{vocabularyNewWords} từ</Text>
                         <View style={styles.vocabChange}>
-                            <Feather name="arrow-up" size={14} color={COLORS.success} />
-                            <Text style={styles.vocabChangeText}>+{vocabularyChange}%</Text>
+                            <Feather name={vocabularyChange >= 0 ? "arrow-up" : "arrow-down"} size={14} color={COLORS.success} />
+                            <Text style={styles.vocabChangeText}>{vocabularyChange > 0 ? '+' : ''}{vocabularyChange}%</Text>
                         </View>
                     </View>
                     {/* Simple wave chart placeholder */}

@@ -7,6 +7,7 @@ import {
     TouchableOpacity,
     StatusBar,
     ActivityIndicator,
+    RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -27,6 +28,7 @@ interface LessonSummary {
     character_count: number;
     vocabulary_count: number;
     estimated_time: number;
+    order: number;
     completed: boolean;
 }
 
@@ -46,6 +48,10 @@ const LessonsScreen: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
+        fetchLessons(selectedLevel);
+    }, [selectedLevel]);
+
+    const onRefresh = React.useCallback(() => {
         fetchLessons(selectedLevel);
     }, [selectedLevel]);
 
@@ -99,12 +105,12 @@ const LessonsScreen: React.FC = () => {
                         {isCompleted ? (
                             <Feather name="check" size={20} color={COLORS.textWhite} />
                         ) : (
-                            <Text style={styles.lessonNumber}>{index + 1}</Text>
+                            <Text style={styles.lessonNumber}>{lesson.order}</Text>
                         )}
                     </View>
                     <View style={styles.lessonInfo}>
                         <Text style={styles.lessonTitle}>
-                            Bài {index + 1}: {lesson.title}
+                            Bài {lesson.order}: {lesson.title.replace(/^Bài \d+(:|-)?\s*/i, '')}
                         </Text>
                         <Text style={styles.lessonMeta}>
                             {lesson.character_count} chữ • {lesson.vocabulary_count} từ • {lesson.estimated_time} phút
@@ -197,6 +203,13 @@ const LessonsScreen: React.FC = () => {
                     style={styles.lessonsList}
                     contentContainerStyle={styles.lessonsContent}
                     showsVerticalScrollIndicator={false}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={false}
+                            onRefresh={onRefresh}
+                            colors={[COLORS.primary]}
+                        />
+                    }
                 >
                     {lessons.map((lesson, index) => renderLessonItem(lesson, index))}
                 </ScrollView>

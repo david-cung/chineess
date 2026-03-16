@@ -40,11 +40,24 @@ const LESSON_COLORS = {
     successLight: '#E8F5E9',
 };
 
+interface LearningItem {
+    id: number;
+    word?: string;
+    character?: string;
+    pinyin: string;
+    meaning?: string;
+    translation?: string;
+    completed?: boolean;
+    stroke_count?: number;
+    examples?: any[];
+}
+
 interface LessonDetail {
     id: number;
     title: string;
     description: string | null;
     hsk_level: number;
+    order: number;
     estimated_time: number;
     vocabCount: number;
     durationMinutes: number;
@@ -56,8 +69,8 @@ interface LessonDetail {
     learnedListeningCount: number;
     learnedSpeakingCount: number;
     // Content arrays
-    characters: any[];
-    vocabulary: any[];
+    characters: LearningItem[];
+    vocabulary: LearningItem[];
     objectives: any[];
     grammar: any[];
     exercises: any[];
@@ -146,13 +159,21 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                     vocabLearned: data.learnedVocabCount || 0,
                     vocabTotal: data.vocabCount || data.vocabulary?.length || 0,
                     grammarLearned: data.learnedGrammarCount || 0,
-                    grammarTotal: data.grammar?.length || 0,
+                    grammarTotal: (data.grammar || []).length,
                     listeningLearned: data.learnedListeningCount || 0,
                     speakingLearned: data.learnedSpeakingCount || 0,
                     activitiesCompleted: data.status === 'completed' ? 5 : (data.progressPercent > 0 ? 1 : 0),
                     activitiesTotal: 5,
                     status: data.status || 'available',
                 });
+
+                // Initialize learned words set if available
+                if (data.vocabulary) {
+                    const completedIds = data.vocabulary
+                        .filter(v => v.completed)
+                        .map(v => v.id);
+                    setLearnedWords(new Set(completedIds));
+                }
             } else {
                 const errorData = await response.json();
                 setError(errorData.detail || 'Không thể tải bài học');
@@ -280,6 +301,22 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
         }
     };
 
+    const completeLearningMode = async () => {
+        if (currentWord) {
+            setLearnedWords(prev => new Set(prev).add(currentWord.id));
+            await trackLearningProgress({
+                item_type: 'vocabulary',
+                item_id: currentWord.id,
+                completed: true,
+            });
+        }
+        setIsLearningMode(false);
+        // Refresh lesson detail before going back (optional, but ensures state is accurate)
+        await fetchLessonDetail();
+        // Go back to Lessons screen
+        navigation?.goBack();
+    };
+
     const speakWord = (text: string) => {
         if (!text) return;
 
@@ -382,8 +419,8 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                 setIsAnalyzing(true);
                 const result = await analyzePronunciation(
                     uri,
-                    currentWord.word || currentWord.character,
-                    currentWord.pinyin
+                    currentWord.word || currentWord.character || '',
+                    currentWord.pinyin || ''
                 );
                 setPronunciationResult(result);
                 setIsAnalyzing(false);
@@ -501,10 +538,8 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                     <Feather name="chevron-left" size={24} color={LESSON_COLORS.textPrimary} />
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>
-                    <Text style={styles.headerTitle}>
-                        HSK {lesson?.hsk_level || 1} – Bài {lessonId}
-                    </Text>
-                    <Text style={styles.headerSubtitle}>{lesson?.title || 'Bài học'}</Text>
+                    <Text style={styles.headerTitle}>HSK {lesson?.hsk_level || 1}</Text>
+                    <Text style={styles.headerSubtitle}>{lesson?.title || 'Đang tải...'}</Text>
                 </View>
                 <TouchableOpacity style={styles.menuButton}>
                     <Feather name="more-horizontal" size={24} color={LESSON_COLORS.textPrimary} />
@@ -530,7 +565,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                         style={styles.progressBar}
                     />
                     <Text style={styles.progressSubtext}>
-                        Đã học {progress.vocabLearned} / {progress.vocabTotal} từ | {progress.activitiesCompleted} / {progress.activitiesTotal} hoạt động
+                        Đã học {progress.vocabLearned} / {progress.vocabTotal} từ vựng
                     </Text>
                 </View>
 
@@ -586,10 +621,10 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                         </TouchableOpacity>
                         <View style={styles.learningHeaderCenter}>
                             <Text style={styles.learningHeaderTitle}>
-                                Bài {lessonId} - Từ vựng
+                                Bài {lesson?.order || lessonId} - Từ vựng
                             </Text>
                             <Text style={styles.learningProgress}>
-                                {currentVocabIndex + 1} / {vocabularyList.length}
+                                {learnedWords.size} / {vocabularyList.length} đã học
                             </Text>
                         </View>
                         <TouchableOpacity onPress={toggleFavorite} style={styles.favoriteButton}>
@@ -618,12 +653,12 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                 <>
                                     {/* Chinese Character */}
                                     <Text style={styles.vocabCharacter}>
-                                        {currentWord.word || currentWord.character}
+                                        {currentWord.word || currentWord.character || ""}
                                     </Text>
 
                                     {/* Pinyin */}
                                     <TouchableOpacity
-                                        onPress={() => speakWord(currentWord.word || currentWord.character)}
+                                        onPress={() => speakWord(currentWord.word || currentWord.character || "")}
                                         style={styles.pinyinContainer}
                                     >
                                         <Text style={styles.vocabPinyin}>{currentWord.pinyin}</Text>
@@ -650,7 +685,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                     {/* Word Header */}
                                     <View style={styles.viewHeader}>
                                         <Text style={styles.viewHeaderWord}>
-                                            {currentWord.word || currentWord.character}
+                                            {currentWord.word || currentWord.character || ""}
                                         </Text>
                                         <Text style={styles.viewHeaderPinyin}>{currentWord.pinyin}</Text>
                                         <Text style={styles.viewHeaderMeaning}>
@@ -666,7 +701,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                     <View style={styles.writingCanvas}>
                                         <View style={styles.writingGuide}>
                                             <Text style={styles.writingGuideText}>
-                                                {currentWord.word || currentWord.character}
+                                                {currentWord.word || currentWord.character || ""}
                                             </Text>
                                         </View>
                                         <Text style={styles.writingHint}>
@@ -697,10 +732,10 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                     <View style={styles.viewHeader}>
                                         <TouchableOpacity
                                             style={styles.wordWithSpeaker}
-                                            onPress={() => speakWord(currentWord.word || currentWord.character)}
+                                            onPress={() => speakWord(currentWord.word || currentWord.character || "")}
                                         >
                                             <Text style={styles.viewHeaderWord}>
-                                                {currentWord.word || currentWord.character}
+                                                {currentWord.word || currentWord.character || ""}
                                             </Text>
                                             <Feather
                                                 name="volume-2"
@@ -746,7 +781,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                         <View style={styles.noExamples}>
                                             <Feather name="info" size={40} color={LESSON_COLORS.textSecondary} />
                                             <Text style={styles.noExamplesText}>
-                                                Chưa có ví dụ cho từ "{currentWord.word || currentWord.character}"
+                                                Chưa có ví dụ cho từ "{currentWord.word || currentWord.character || ""}"
                                             </Text>
                                         </View>
                                     )}
@@ -759,7 +794,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                     {/* Word Header */}
                                     <View style={styles.viewHeader}>
                                         <Text style={styles.pronunciationCharacter}>
-                                            {currentWord.word || currentWord.character}
+                                            {currentWord.word || currentWord.character || ""}
                                         </Text>
                                         <Text style={styles.pronunciationPinyin}>{currentWord.pinyin}</Text>
                                         <Text style={styles.viewHeaderMeaning}>
@@ -770,7 +805,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                     {/* Listen Button */}
                                     <TouchableOpacity
                                         style={[styles.listenButton, isSpeaking && styles.listenButtonActive]}
-                                        onPress={() => speakWord(currentWord.word || currentWord.character)}
+                                        onPress={() => speakWord(currentWord.word || currentWord.character || "")}
                                     >
                                         <Feather
                                             name="volume-2"
@@ -876,7 +911,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                         <View style={styles.actionButtons}>
                             <TouchableOpacity
                                 style={styles.actionButton}
-                                onPress={() => speakWord(currentWord.word || currentWord.character)}
+                                onPress={() => speakWord(currentWord.word || currentWord.character || "")}
                             >
                                 <View style={[styles.actionIconContainer, isSpeaking && styles.actionIconActive]}>
                                     <Feather name="volume-2" size={24} color={isSpeaking ? LESSON_COLORS.primary : LESSON_COLORS.textSecondary} />
@@ -945,7 +980,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                         ) : (
                             <TouchableOpacity
                                 style={[styles.navButton, styles.completeButton]}
-                                onPress={closeLearningMode}
+                                onPress={completeLearningMode}
                             >
                                 <Feather name="check" size={20} color="#FFFFFF" />
                                 <Text style={styles.nextButtonText}>Hoàn thành</Text>
