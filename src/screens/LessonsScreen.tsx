@@ -15,7 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
 import { Card, ProgressBar, Badge } from '../components';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 
 // Get API base URL from config
 const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
@@ -49,15 +49,17 @@ const LessonsScreen: React.FC = () => {
 
     const route = useRoute<any>();
 
+    useFocusEffect(
+        React.useCallback(() => {
+            fetchLessons(selectedLevel);
+        }, [selectedLevel])
+    );
+
     useEffect(() => {
         if (route.params?.hskLevel) {
             setSelectedLevel(route.params.hskLevel);
         }
     }, [route.params?.hskLevel]);
-
-    useEffect(() => {
-        fetchLessons(selectedLevel);
-    }, [selectedLevel]);
 
     const onRefresh = React.useCallback(() => {
         fetchLessons(selectedLevel);

@@ -279,17 +279,19 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
         fetchLessonDetail();
     };
 
-    const handleNextVocab = () => {
+    const handleNextVocab = async () => {
         if (currentVocabIndex < vocabularyList.length - 1) {
             // Mark current word as learned
             if (currentWord) {
                 setLearnedWords(prev => new Set(prev).add(currentWord.id));
                 // Track progress to API
-                trackLearningProgress({
+                await trackLearningProgress({
                     item_type: 'vocabulary',
                     item_id: currentWord.id,
                     completed: true,
                 });
+                // Refresh progress percentage from backend
+                await fetchLessonDetail();
             }
             setCurrentVocabIndex(currentVocabIndex + 1);
         }
