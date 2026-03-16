@@ -314,7 +314,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
         // Refresh lesson detail before going back (optional, but ensures state is accurate)
         await fetchLessonDetail();
         // Go back to Lessons screen
-        navigation?.goBack();
+        navigation?.navigate('Lessons', { hskLevel: lesson?.hsk_level || 1 });
     };
 
     const speakWord = (text: string) => {
