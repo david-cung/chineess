@@ -756,12 +756,15 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                         style={styles.writingCanvas}
                                         {...panResponder.panHandlers}
                                     >
-                                        <View style={styles.writingGuide}>
+                                        <View style={styles.writingGuide} pointerEvents="none">
                                             <Text style={styles.writingGuideText}>
                                                 {currentWord.word || currentWord.character || ""}
                                             </Text>
                                         </View>
-                                        <Svg style={StyleSheet.absoluteFill}>
+                                        <Svg 
+                                            style={StyleSheet.absoluteFill}
+                                            pointerEvents="none"
+                                        >
                                             {paths.map((path, index) => (
                                                 <Path
                                                     key={index}
@@ -1566,13 +1569,14 @@ const styles = StyleSheet.create({
         borderWidth: 2,
         borderColor: '#E0E0E0',
         borderStyle: 'dashed',
+        overflow: 'hidden',
     },
     writingGuide: {
         position: 'absolute',
         opacity: 0.2,
     },
     writingGuideText: {
-        fontSize: 100,
+        fontSize: 80,
         color: LESSON_COLORS.textSecondary,
         textAlign: 'center',
     },
