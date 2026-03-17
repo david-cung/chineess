@@ -1558,7 +1558,7 @@ const styles = StyleSheet.create({
     },
     writingCanvas: {
         width: '100%',
-        height: 280,
+        height: 320,
         backgroundColor: '#F5F5F5',
         borderRadius: 16,
         alignItems: 'center',
@@ -1572,7 +1572,7 @@ const styles = StyleSheet.create({
         opacity: 0.2,
     },
     writingGuideText: {
-        fontSize: 140,
+        fontSize: 100,
         color: LESSON_COLORS.textSecondary,
         textAlign: 'center',
     },
