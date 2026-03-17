@@ -13,6 +13,7 @@ import {
     Animated,
     PanResponder,
 } from 'react-native';
+import { Svg, Path } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -102,6 +103,12 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
     const [favorites, setFavorites] = useState<Set<number>>(new Set());
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [activeView, setActiveView] = useState<'card' | 'examples' | 'writing' | 'pronunciation'>('card');
+    
+    // Writing practice states
+    const [paths, setPaths] = useState<string[]>([]);
+    const [currentPath, setCurrentPath] = useState<string>('');
+    const [isDrawing, setIsDrawing] = useState(false);
+    const activePathRef = useRef<string>('');
 
     // Recording states for pronunciation practice
     const [isRecording, setIsRecording] = useState(false);
@@ -275,12 +282,52 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
 
     const closeLearningMode = () => {
         setIsLearningMode(false);
+        clearWriting(); // Reset writing
         // Refresh lesson data to get updated progress
         fetchLessonDetail();
     };
 
+    const clearWriting = () => {
+        setPaths([]);
+        setCurrentPath('');
+        activePathRef.current = '';
+    };
+
+    const panResponder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onMoveShouldSetPanResponder: () => true,
+            onPanResponderGrant: (evt) => {
+                setIsDrawing(true);
+                const { locationX, locationY } = evt.nativeEvent;
+                const path = `M${locationX},${locationY}`;
+                activePathRef.current = path;
+                setCurrentPath(path);
+            },
+            onPanResponderMove: (evt) => {
+                const { locationX, locationY } = evt.nativeEvent;
+                const newPath = `${activePathRef.current} L${locationX},${locationY}`;
+                activePathRef.current = newPath;
+                setCurrentPath(newPath);
+            },
+            onPanResponderRelease: () => {
+                setIsDrawing(false);
+                if (activePathRef.current) {
+                    const finalPath = activePathRef.current;
+                    setPaths((prev) => [...prev, finalPath]);
+                    activePathRef.current = '';
+                    setCurrentPath('');
+                }
+            },
+            onPanResponderTerminate: () => {
+                setIsDrawing(false);
+            },
+        })
+    ).current;
+
     const handleNextVocab = async () => {
         if (currentVocabIndex < vocabularyList.length - 1) {
+            clearWriting(); // Reset writing
             // Mark current word as learned
             if (currentWord) {
                 setLearnedWords(prev => new Set(prev).add(currentWord.id));
@@ -299,6 +346,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
 
     const handlePrevVocab = () => {
         if (currentVocabIndex > 0) {
+            clearWriting(); // Reset writing
             setCurrentVocabIndex(currentVocabIndex - 1);
         }
     };
@@ -649,7 +697,11 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                     </View>
 
                     {/* Vocabulary Card */}
-                    <ScrollView style={styles.vocabCardScroll} contentContainerStyle={styles.vocabCardScrollContent}>
+                    <ScrollView 
+                        style={styles.vocabCardScroll} 
+                        contentContainerStyle={styles.vocabCardScrollContent}
+                        scrollEnabled={!isDrawing}
+                    >
                         <View style={styles.vocabCard}>
                             {currentWord && activeView === 'card' && (
                                 <>
@@ -700,15 +752,43 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                     </Text>
 
                                     {/* Writing Canvas */}
-                                    <View style={styles.writingCanvas}>
+                                    <View 
+                                        style={styles.writingCanvas}
+                                        {...panResponder.panHandlers}
+                                    >
                                         <View style={styles.writingGuide}>
                                             <Text style={styles.writingGuideText}>
                                                 {currentWord.word || currentWord.character || ""}
                                             </Text>
                                         </View>
-                                        <Text style={styles.writingHint}>
-                                            Dùng ngón tay vẽ theo nét chữ
-                                        </Text>
+                                        <Svg style={StyleSheet.absoluteFill}>
+                                            {paths.map((path, index) => (
+                                                <Path
+                                                    key={index}
+                                                    d={path}
+                                                    stroke={LESSON_COLORS.textPrimary}
+                                                    strokeWidth={6}
+                                                    fill="none"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                />
+                                            ))}
+                                            {currentPath ? (
+                                                <Path
+                                                    d={currentPath}
+                                                    stroke={LESSON_COLORS.textPrimary}
+                                                    strokeWidth={6}
+                                                    fill="none"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                />
+                                            ) : null}
+                                        </Svg>
+                                        {!isDrawing && paths.length === 0 && (
+                                            <Text style={styles.writingHint}>
+                                                Dùng ngón tay vẽ theo nét chữ
+                                            </Text>
+                                        )}
                                     </View>
 
                                     {/* Stroke Info */}
@@ -720,7 +800,10 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                     </View>
 
                                     {/* Clear Button */}
-                                    <TouchableOpacity style={styles.clearButton}>
+                                    <TouchableOpacity 
+                                        style={styles.clearButton}
+                                        onPress={clearWriting}
+                                    >
                                         <Feather name="trash-2" size={20} color={LESSON_COLORS.textSecondary} />
                                         <Text style={styles.clearButtonText}>Xóa và viết lại</Text>
                                     </TouchableOpacity>
