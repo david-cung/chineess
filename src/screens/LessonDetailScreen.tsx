@@ -297,6 +297,8 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
         PanResponder.create({
             onStartShouldSetPanResponder: () => true,
             onMoveShouldSetPanResponder: () => true,
+            onStartShouldSetPanResponderCapture: () => true,
+            onMoveShouldSetPanResponderCapture: () => true,
             onPanResponderGrant: (evt) => {
                 setIsDrawing(true);
                 const { locationX, locationY } = evt.nativeEvent;
@@ -764,6 +766,8 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                             </Text>
                                         </View>
                                         <Svg 
+                                            width="100%" 
+                                            height="100%"
                                             style={StyleSheet.absoluteFill}
                                             pointerEvents="none"
                                         >
@@ -790,7 +794,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                             ) : null}
                                         </Svg>
                                         {!isDrawing && paths.length === 0 && (
-                                            <Text style={styles.writingHint}>
+                                            <Text style={styles.writingHint} pointerEvents="none">
                                                 Dùng ngón tay vẽ theo nét chữ
                                             </Text>
                                         )}
@@ -1543,7 +1547,7 @@ const styles = StyleSheet.create({
     },
     vocabCardScrollContent: {
         flexGrow: 1,
-        paddingBottom: 40,
+        paddingBottom: 100,
     },
     // Writing View Styles
     writingView: {
