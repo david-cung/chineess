@@ -843,9 +843,8 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                         </Text>
                                     </View>
 
-                                    <Text style={styles.examplesTitle}>Câu ví dụ ({currentWord.examples?.length || 0})</Text>
-
-                                    {currentWord.examples && currentWord.examples.length > 0 ? (
+                                    {/* Examples List or Legacy Fallback */}
+                                    {(currentWord.examples && currentWord.examples.length > 0) ? (
                                         currentWord.examples.map((example: any, index: number) => (
                                             <View key={index} style={styles.exampleCard}>
                                                 {/* Chinese Sentence with Speaker */}
@@ -871,7 +870,23 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                                 <Text style={styles.exampleVietnameseText}>{example.translation || example.vietnamese}</Text>
                                             </View>
                                         ))
+                                    ) : currentWord.example ? (
+                                        /* Legacy Example Fallback */
+                                        <View style={styles.exampleCard}>
+                                            <TouchableOpacity
+                                                style={styles.exampleSentenceRow}
+                                                onPress={() => speakWord(currentWord.example)}
+                                            >
+                                                <Text style={styles.exampleChineseText}>{currentWord.example}</Text>
+                                                <View style={styles.exampleSpeakerBtn}>
+                                                    <Feather name="volume-2" size={20} color={LESSON_COLORS.primary} />
+                                                </View>
+                                            </TouchableOpacity>
+                                            <View style={styles.exampleDivider} />
+                                            <Text style={styles.exampleVietnameseText}>Ví dụ minh họa (Legacy)</Text>
+                                        </View>
                                     ) : (
+                                        /* No Examples at all */
                                         <View style={styles.noExamples}>
                                             <Feather name="info" size={40} color={LESSON_COLORS.textSecondary} />
                                             <Text style={styles.noExamplesText}>
