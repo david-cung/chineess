@@ -132,19 +132,34 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
                 });
 
                 // Map vocabulary data with examples
-                const vocab = data.vocabulary?.map((v: any, index: number) => ({
-                    id: v.id || index,
-                    word: v.word || v.character || '你好',
-                    pinyin: v.pinyin || 'nǐ hǎo',
-                    meaning: v.meaning || v.translation || 'Xin chào',
-                    audio_url: v.audio_url,
-                    examples: v.examples?.map((ex: any, idx: number) => ({
+                const vocab = data.vocabulary?.map((v: any, index: number) => {
+                    // Start with structured examples
+                    const examples = v.examples?.map((ex: any, idx: number) => ({
                         id: ex.id || `${v.id}_${idx}`,
-                        chinese: ex.chinese || ex.sentence || '',
+                        chinese: ex.sentence || ex.chinese || '',
                         pinyin: ex.pinyin || ex.sentence_pinyin || '',
-                        vietnamese: ex.vietnamese || ex.translation || '',
-                    })) || [],
-                })) || getMockVocabulary();
+                        vietnamese: ex.translation || ex.vietnamese || '',
+                    })) || [];
+
+                    // Fallback to legacy example string if no structured examples exist
+                    if (examples.length === 0 && v.example) {
+                        examples.push({
+                            id: `legacy_${v.id || index}`,
+                            chinese: v.example,
+                            pinyin: '',
+                            vietnamese: 'Ví dụ minh họa (Legacy)',
+                        });
+                    }
+
+                    return {
+                        id: v.id || index,
+                        word: v.word || v.character || '你好',
+                        pinyin: v.pinyin || 'nǐ hǎo',
+                        meaning: v.meaning || v.translation || 'Xin chào',
+                        audio_url: v.audio_url,
+                        examples: examples,
+                    };
+                }) || getMockVocabulary();
 
                 setVocabularyList(vocab);
             } else {
@@ -360,8 +375,8 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
     };
 
     const handleExamples = () => {
-        const currentWord = vocabularyList[currentIndex];
-        if (currentWord?.examples && currentWord.examples.length > 0) {
+        const currentWordData = vocabularyList[currentIndex];
+        if (currentWordData?.examples && currentWordData.examples.length > 0) {
             setCurrentExampleIndex(0);
             setShowExamplesModal(true);
         }
