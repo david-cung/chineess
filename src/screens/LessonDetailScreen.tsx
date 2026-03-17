@@ -322,6 +322,8 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
             onPanResponderTerminate: () => {
                 setIsDrawing(false);
             },
+            onPanResponderTerminationRequest: () => false,
+            onShouldBlockNativeResponder: () => true,
         })
     ).current;
 
@@ -1386,19 +1388,18 @@ const styles = StyleSheet.create({
         backgroundColor: LESSON_COLORS.cardBackground,
     },
     vocabCard: {
-        flex: 1,
         backgroundColor: LESSON_COLORS.cardBackground,
         marginHorizontal: 20,
         marginTop: 20,
         borderRadius: 24,
         padding: 32,
         alignItems: 'center',
-        justifyContent: 'center',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.08,
         shadowRadius: 16,
         elevation: 4,
+        minHeight: 400,
     },
     vocabCharacter: {
         fontSize: 72,
@@ -1542,6 +1543,7 @@ const styles = StyleSheet.create({
     },
     vocabCardScrollContent: {
         flexGrow: 1,
+        paddingBottom: 40,
     },
     // Writing View Styles
     writingView: {
