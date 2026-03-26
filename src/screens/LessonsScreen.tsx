@@ -14,8 +14,9 @@ import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
-import { Card, ProgressBar, Badge } from '../components';
+import { Card, ProgressBar, Badge, ErrorState } from '../components';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import { dbService } from '../services/database';
 
 // Get API base URL from config
 const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
@@ -70,26 +71,53 @@ const LessonsScreen: React.FC = () => {
             setIsLoading(true);
             setError(null);
 
-            const token = await AsyncStorage.getItem('access_token');
-
-            const response = await fetch(`${API_BASE_URL}/api/lessons?hsk_level=${hskLevel}`, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-                },
-            });
-
-            if (response.ok) {
-                const data: LessonSummary[] = await response.json();
-                setLessons(data);
+            // 1. Try to load from SQLite first
+            const localLessons = await dbService.getLessons(hskLevel);
+            
+            if (localLessons.length > 0) {
+                // Map DB schema to LessonSummary interface
+                // We add placeholder counts if not stored in the main lessons table
+                const mappedLessons = localLessons.map((l: any) => ({
+                    id: l.id,
+                    title: l.title,
+                    description: l.description,
+                    hsk_level: l.hsk_level,
+                    order: l.order,
+                    estimated_time: l.estimated_time,
+                    character_count: 0, // In full implementation, we'd join or store these
+                    vocabulary_count: 0,
+                    completed: false, // Progress synced separately
+                }));
+                setLessons(mappedLessons);
             } else {
-                const errorData = await response.json();
-                setError(errorData.detail || 'Không thể tải danh sách bài học');
+                // 2. Fallback to API if SQLite is empty
+                const token = await AsyncStorage.getItem('access_token');
+                const response = await fetch(`${API_BASE_URL}/api/lessons?hsk_level=${hskLevel}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                    },
+                });
+
+                if (response.ok) {
+                    const data: LessonSummary[] = await response.json();
+                    setLessons(data);
+                } else {
+                    const errorData = await response.json();
+                    setError(errorData.detail || 'Không thể tải danh sách bài học');
+                }
             }
         } catch (err) {
             console.error('Error fetching lessons:', err);
             setError('Không thể kết nối đến server');
+            
+            // Try to load any local data even on error
+            const localLessons = await dbService.getLessons(hskLevel);
+            if (localLessons.length > 0) {
+                setLessons(localLessons as any);
+                setError(null);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -192,16 +220,9 @@ const LessonsScreen: React.FC = () => {
                     <ActivityIndicator size="large" color={COLORS.primary} />
                     <Text style={styles.loadingText}>Đang tải...</Text>
                 </View>
-            ) : error ? (
+            ) : error && lessons.length === 0 ? (
                 <View style={styles.errorContainer}>
-                    <Feather name="alert-circle" size={48} color={COLORS.textLight} />
-                    <Text style={styles.errorText}>{error}</Text>
-                    <TouchableOpacity
-                        style={styles.retryButton}
-                        onPress={() => fetchLessons(selectedLevel)}
-                    >
-                        <Text style={styles.retryText}>Thử lại</Text>
-                    </TouchableOpacity>
+                    <ErrorState message={error} onRetry={() => fetchLessons(selectedLevel)} />
                 </View>
             ) : lessons.length === 0 ? (
                 <View style={styles.emptyContainer}>

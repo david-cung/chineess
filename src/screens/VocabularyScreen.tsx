@@ -21,6 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { dbService } from '../services/database';
 
 const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -106,14 +107,70 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
         fetchVocabulary();
     }, [lessonId]);
 
+
+// ... inside the component ...
+
     const fetchVocabulary = async () => {
         try {
             setIsLoading(true);
             setError(null);
 
-            const token = await AsyncStorage.getItem('access_token');
+            // 1. Try SQLite first
+            const localData = await dbService.getLessonDetail(lessonId);
+            if (localData && localData.vocabulary && localData.vocabulary.length > 0) {
+                // Set lesson metadata from local data
+                setLessonInfo({
+                    hskLevel: localData.hsk_level,
+                    title: localData.title,
+                });
 
-            // Fetch vocabulary from lesson detail API
+                // Map vocabulary data with examples
+                const vocab = localData.vocabulary.map((v: any, index: number) => {
+                    const examples = v.examples?.map((ex: any, idx: number) => ({
+                        id: ex.id || `${v.id}_${idx}`,
+                        chinese: ex.sentence || ex.chinese || '',
+                        pinyin: ex.pinyin || ex.sentence_pinyin || '',
+                        vietnamese: ex.translation || ex.vietnamese || '',
+                    })) || [];
+
+                    if (examples.length === 0 && v.example) {
+                        examples.push({
+                            id: `legacy_${v.id || index}`,
+                            chinese: v.example,
+                            pinyin: '',
+                            vietnamese: 'Ví dụ minh họa (Legacy)',
+                        });
+                    }
+
+                    return {
+                        id: v.id || index,
+                        word: v.word || '你好',
+                        pinyin: v.pinyin || 'nǐ hǎo',
+                        meaning: v.meaning || 'Xin chào',
+                        audio_url: v.audio_url,
+                        examples: examples,
+                    };
+                });
+
+                setVocabularyList(vocab);
+                setIsLoading(false);
+                
+                // Refresh from API in background silently
+                fetchVocabularyFromAPI(true);
+            } else {
+                await fetchVocabularyFromAPI(false);
+            }
+        } catch (err) {
+            console.error('Error fetching vocabulary:', err);
+            await fetchVocabularyFromAPI(false);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fetchVocabularyFromAPI = async (silent = false) => {
+        try {
+            const token = await AsyncStorage.getItem('access_token');
             const response = await fetch(`${API_BASE_URL}/api/lessons/${lessonId}`, {
                 method: 'GET',
                 headers: {
@@ -124,16 +181,12 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
 
             if (response.ok) {
                 const data = await response.json();
-
-                // Set lesson metadata
                 setLessonInfo({
                     hskLevel: data.hsk_level,
                     title: data.title,
                 });
 
-                // Map vocabulary data with examples
                 const vocab = data.vocabulary?.map((v: any, index: number) => {
-                    // Start with structured examples
                     const examples = v.examples?.map((ex: any, idx: number) => ({
                         id: ex.id || `${v.id}_${idx}`,
                         chinese: ex.sentence || ex.chinese || '',
@@ -141,7 +194,6 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
                         vietnamese: ex.translation || ex.vietnamese || '',
                     })) || [];
 
-                    // Fallback to legacy example string if no structured examples exist
                     if (examples.length === 0 && v.example) {
                         examples.push({
                             id: `legacy_${v.id || index}`,
@@ -159,18 +211,12 @@ const VocabularyScreen: React.FC<VocabularyScreenProps> = ({ route, navigation }
                         audio_url: v.audio_url,
                         examples: examples,
                     };
-                }) || getMockVocabulary();
+                }) || [];
 
-                setVocabularyList(vocab);
-            } else {
-                // Use mock data if API fails
-                setVocabularyList(getMockVocabulary());
+                if (vocab.length > 0) setVocabularyList(vocab);
             }
         } catch (err) {
-            console.error('Error fetching vocabulary:', err);
-            setVocabularyList(getMockVocabulary());
-        } finally {
-            setIsLoading(false);
+            console.error('API fetch error (vocab):', err);
         }
     };
 

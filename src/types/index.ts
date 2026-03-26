@@ -7,6 +7,12 @@ export type RootStackParamList = {
     Grammar: { lessonId: number; hskLevel: number };
     Review: undefined;
     Quiz: { lessonId: number };
+    SpeakingPractice: undefined;
+    WritingPractice: undefined;
+    RadioMode: { lessonId: number };
+    AIChat: undefined;
+    Onboarding: undefined;
+    OfflineReview: undefined;
 };
 
 export type RootTabParamList = {
@@ -45,7 +51,7 @@ export interface Lesson {
 // Types cho Practice
 export interface PracticeItem {
     id: string;
-    type: 'listening' | 'speaking' | 'writing' | 'quiz';
+    type: 'speaking' | 'listening' | 'writing' | 'quiz' | 'review' | 'radio' | 'ai_chat' | 'offline';
     title: string;
     description: string;
     icon: string;

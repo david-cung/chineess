@@ -17,8 +17,15 @@ import {
     LoginScreen,
     ReviewScreen,
     QuizScreen,
+    SpeakingPracticeScreen,
+    WritingPracticeScreen,
+    RadioModeScreen,
+    AIChatScreen,
+    OnboardingScreen,
+    OfflineReviewScreen,
 } from '../screens';
 import { RootTabParamList, RootStackParamList } from '../types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -116,96 +123,113 @@ const TabNavigator: React.FC = () => {
     );
 };
 
+import { SyncService } from '../services/syncService';
+import { dbService } from '../services/database';
+
 const AppNavigator: React.FC = () => {
-    // For demo purposes, set to false to show login screen first
-    // In production, this would be determined by auth state
     const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
+
+    React.useEffect(() => {
+        const checkStatus = async () => {
+            try {
+                const hasSeen = await AsyncStorage.getItem('has_seen_onboarding');
+                const token = await AsyncStorage.getItem('access_token');
+                
+                setShowOnboarding(hasSeen !== 'true');
+                setIsLoggedIn(!!token);
+
+                if (token) {
+                    // Initialize database and trigger sync in background
+                    await dbService.init();
+                    if (await SyncService.shouldSync()) {
+                        SyncService.performFullSync(); // Background sync
+                    }
+                }
+            } catch (err) {
+                setShowOnboarding(true);
+            }
+        };
+        checkStatus();
+    }, []);
+
+    if (showOnboarding === null) {
+        return null; // Or a splash screen
+    }
 
     return (
         <NavigationContainer>
             <Stack.Navigator
+                initialRouteName={showOnboarding ? "Onboarding" : (isLoggedIn ? "MainTabs" : "Login")}
                 screenOptions={{
                     headerShown: false,
                 }}
             >
-                {isLoggedIn ? (
-                    <>
-                        <Stack.Screen name="MainTabs" component={TabNavigator} />
-                        <Stack.Screen
-                            name="LessonDetail"
-                            component={LessonDetailScreen}
-                            options={{
-                                animation: 'slide_from_right',
-                            }}
-                        />
-                        <Stack.Screen
-                            name="Vocabulary"
-                            component={VocabularyScreen}
-                            options={{
-                                animation: 'slide_from_right',
-                            }}
-                        />
-                        <Stack.Screen
-                            name="Grammar"
-                            component={GrammarScreen}
-                            options={{
-                                animation: 'slide_from_right',
-                            }}
-                        />
-                        <Stack.Screen
-                            name="Review"
-                            component={ReviewScreen}
-                            options={{ animation: 'slide_from_bottom' }}
-                        />
-                        <Stack.Screen
-                            name="Quiz"
-                            component={QuizScreen}
-                            options={{ animation: 'slide_from_right' }}
-                        />
-                    </>
-                ) : (
-                    <>
-                        <Stack.Screen
-                            name="Login"
-                            component={LoginScreen}
-                            options={{
-                                animation: 'fade',
-                            }}
-                        />
-                        <Stack.Screen name="MainTabs" component={TabNavigator} />
-                        <Stack.Screen
-                            name="LessonDetail"
-                            component={LessonDetailScreen}
-                            options={{
-                                animation: 'slide_from_right',
-                            }}
-                        />
-                        <Stack.Screen
-                            name="Vocabulary"
-                            component={VocabularyScreen}
-                            options={{
-                                animation: 'slide_from_right',
-                            }}
-                        />
-                        <Stack.Screen
-                            name="Grammar"
-                            component={GrammarScreen}
-                            options={{
-                                animation: 'slide_from_right',
-                            }}
-                        />
-                        <Stack.Screen
-                            name="Review"
-                            component={ReviewScreen}
-                            options={{ animation: 'slide_from_bottom' }}
-                        />
-                        <Stack.Screen
-                            name="Quiz"
-                            component={QuizScreen}
-                            options={{ animation: 'slide_from_right' }}
-                        />
-                    </>
-                )}
+                <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+                <Stack.Screen
+                    name="Login"
+                    component={LoginScreen}
+                    options={{
+                        animation: 'fade',
+                    }}
+                />
+                <Stack.Screen name="MainTabs" component={TabNavigator} />
+                <Stack.Screen
+                    name="LessonDetail"
+                    component={LessonDetailScreen}
+                    options={{
+                        animation: 'slide_from_right',
+                    }}
+                />
+                <Stack.Screen
+                    name="Vocabulary"
+                    component={VocabularyScreen}
+                    options={{
+                        animation: 'slide_from_right',
+                    }}
+                />
+                <Stack.Screen
+                    name="Grammar"
+                    component={GrammarScreen}
+                    options={{
+                        animation: 'slide_from_right',
+                    }}
+                />
+                <Stack.Screen
+                    name="Review"
+                    component={ReviewScreen}
+                    options={{ animation: 'slide_from_bottom' }}
+                />
+                <Stack.Screen
+                    name="Quiz"
+                    component={QuizScreen}
+                    options={{ animation: 'slide_from_right' }}
+                />
+                <Stack.Screen
+                    name="SpeakingPractice"
+                    component={SpeakingPracticeScreen}
+                    options={{ animation: 'slide_from_right' }}
+                />
+                <Stack.Screen
+                    name="WritingPractice"
+                    component={WritingPracticeScreen}
+                    options={{ animation: 'slide_from_right' }}
+                />
+                <Stack.Screen
+                    name="RadioMode"
+                    component={RadioModeScreen}
+                    options={{ animation: 'slide_from_right' }}
+                />
+                <Stack.Screen
+                    name="AIChat"
+                    component={AIChatScreen}
+                    options={{ animation: 'slide_from_right' }}
+                />
+                <Stack.Screen
+                    name="OfflineReview"
+                    component={OfflineReviewScreen}
+                    options={{ animation: 'slide_from_bottom' }}
+                />
             </Stack.Navigator>
         </NavigationContainer>
     );

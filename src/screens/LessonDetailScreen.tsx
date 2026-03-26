@@ -22,6 +22,7 @@ import * as Speech from 'expo-speech';
 import { Audio } from 'expo-av';
 import { ProgressBar } from '../components';
 import { trackLearningProgress, analyzePronunciation, PronunciationResult } from '../utils/api';
+import { dbService } from '../services/database';
 
 const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -50,6 +51,7 @@ interface LearningItem {
     translation?: string;
     completed?: boolean;
     stroke_count?: number;
+    example?: string;
     examples?: any[];
 }
 
@@ -146,8 +148,67 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
             if (!silent) setIsLoading(true);
             setError(null);
 
-            const token = await AsyncStorage.getItem('access_token');
+            // 1. Try to load from SQLite first
+            const localData = await dbService.getLessonDetail(lessonId);
+            
+            if (localData) {
+                // Map DB schema to LessonDetail interface
+                const mappedData: LessonDetail = {
+                    id: localData.id,
+                    title: localData.title,
+                    description: localData.description,
+                    hsk_level: localData.hsk_level,
+                    order: localData.order,
+                    estimated_time: localData.estimated_time,
+                    vocabCount: localData.vocabulary?.length || 0,
+                    durationMinutes: localData.estimated_time || 0,
+                    status: 'available', // Default, we'd ideally fetch this from progress
+                    progressPercent: 0,
+                    learnedVocabCount: 0,
+                    learnedGrammarCount: 0,
+                    learnedListeningCount: 0,
+                    learnedSpeakingCount: 0,
+                    characters: localData.characters || [],
+                    vocabulary: localData.vocabulary || [],
+                    objectives: [], // Need to add to DB if important
+                    grammar: localData.grammar || [],
+                    exercises: [],
+                };
+                setLesson(mappedData);
+                
+                // Initialize progress from simple local state for now
+                setProgress({
+                    percent: 0,
+                    vocabLearned: 0,
+                    vocabTotal: mappedData.vocabCount,
+                    grammarLearned: 0,
+                    grammarTotal: mappedData.grammar.length,
+                    listeningLearned: 0,
+                    speakingLearned: 0,
+                    activitiesCompleted: 0,
+                    activitiesTotal: 5,
+                    status: 'available',
+                });
 
+                if (!silent) {
+                    // Still trigger a silent background fetch from API to get latest progress
+                    fetchLessonDetailFromAPI(true);
+                }
+            } else {
+                // 2. Clear SQLite was empty, fetch from API
+                await fetchLessonDetailFromAPI(silent);
+            }
+        } catch (err) {
+            console.error('Error fetching lesson detail:', err);
+            setError('Không thể tải bài học');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fetchLessonDetailFromAPI = async (silent = false) => {
+        try {
+            const token = await AsyncStorage.getItem('access_token');
             const response = await fetch(`${API_BASE_URL}/api/lessons/${lessonId}`, {
                 method: 'GET',
                 headers: {
@@ -182,14 +243,16 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                     setLearnedWords(new Set(completedIds));
                 }
             } else {
-                const errorData = await response.json();
-                setError(errorData.detail || 'Không thể tải bài học');
+                if (!silent) {
+                    const errorData = await response.json();
+                    setError(errorData.detail || 'Không thể tải bài học');
+                }
             }
         } catch (err) {
-            console.error('Error fetching lesson detail:', err);
-            setError('Không thể kết nối đến server');
-        } finally {
-            setIsLoading(false);
+            if (!silent) {
+                console.error('Error fetching lesson detail API:', err);
+                setError('Không thể kết nối đến server');
+            }
         }
     };
 
@@ -253,19 +316,27 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
         // using the specific item_id from the API response
 
         if (activity.id === 'vocabulary') {
+            if (!vocabularyList || vocabularyList.length === 0) {
+                alert("Từ vựng bài này đang được cập nhật.");
+                return;
+            }
             navigation?.navigate('Vocabulary', {
                 lessonId: lessonId,
                 hskLevel: lesson?.hsk_level || 1,
                 lessonNumber: lessonId,
             });
         } else if (activity.id === 'sentences') {
+            if (!lesson?.grammar || lesson.grammar.length === 0) {
+                alert("Ngữ pháp bài này đang được cập nhật.");
+                return;
+            }
             navigation?.navigate('Grammar', {
                 lessonId: lessonId,
                 hskLevel: lesson?.hsk_level || 1,
             });
         } else {
             console.log('Activity pressed:', activity.id);
-            // TODO: Navigate to other activity screens
+            alert("Tính năng này đang được phát triển.");
         }
     };
 
@@ -277,6 +348,8 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
         if (vocabularyList.length > 0) {
             setIsLearningMode(true);
             setCurrentVocabIndex(0);
+        } else {
+            alert("Nội dung bài học chưa có. Tính năng đang tiếp tục được cập nhật. Vui lòng quay lại sau.");
         }
     };
 
@@ -543,14 +616,14 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                         </View>
                     )}
                     {isInProgress && (
-                        <TouchableOpacity style={styles.continueButton}>
+                        <View style={styles.continueButton} pointerEvents="none">
                             <Text style={styles.continueButtonText}>Tiếp tục</Text>
-                        </TouchableOpacity>
+                        </View>
                     )}
                     {!isLocked && !isCompleted && !isInProgress && (
-                        <TouchableOpacity style={styles.startButton}>
+                        <View style={styles.startButton} pointerEvents="none">
                             <Text style={styles.startButtonText}>Bắt đầu</Text>
-                        </TouchableOpacity>
+                        </View>
                     )}
                 </View>
             </TouchableOpacity>
@@ -850,7 +923,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                                 {/* Chinese Sentence with Speaker */}
                                                 <TouchableOpacity
                                                     style={styles.exampleSentenceRow}
-                                                    onPress={() => speakWord(example.sentence || example.chinese)}
+                                                    onPress={() => speakWord(example.sentence || example.chinese || "")}
                                                 >
                                                     <Text style={styles.exampleChineseText}>{example.sentence || example.chinese}</Text>
                                                     <View style={styles.exampleSpeakerBtn}>
@@ -875,7 +948,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route, navigati
                                         <View style={styles.exampleCard}>
                                             <TouchableOpacity
                                                 style={styles.exampleSentenceRow}
-                                                onPress={() => speakWord(currentWord.example)}
+                                                onPress={() => speakWord(currentWord.example || "")}
                                             >
                                                 <Text style={styles.exampleChineseText}>{currentWord.example}</Text>
                                                 <View style={styles.exampleSpeakerBtn}>

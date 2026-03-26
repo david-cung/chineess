@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as Google from 'expo-auth-session/providers/google';
+import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
@@ -45,6 +46,10 @@ export const useGoogleAuth = () => {
         clientId: GOOGLE_CLIENT_ID.web,
         iosClientId: GOOGLE_CLIENT_ID.ios,
         androidClientId: GOOGLE_CLIENT_ID.android,
+        redirectUri: AuthSession.makeRedirectUri({
+            scheme: 'hanyu-learn',
+            preferLocalhost: true,
+        }),
     });
 
     // Handle auth response

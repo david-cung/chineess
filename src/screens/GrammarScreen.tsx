@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { dbService } from '../services/database';
 
 const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -100,11 +101,71 @@ const GrammarScreen: React.FC<GrammarScreenProps> = ({ route, navigation }) => {
         }
     }, [currentVocabIndex, currentExampleIndex, vocabularyItems]);
 
+
+// ... inside the component ...
+
     const fetchVocabularyWithExamples = async () => {
         try {
             setIsLoading(true);
-            const token = await AsyncStorage.getItem('access_token');
+            
+            // 1. Try SQLite first
+            const localData = await dbService.getLessonDetail(lessonId);
+            if (localData && localData.vocabulary && localData.vocabulary.length > 0) {
+                const vocabWithExamples = localData.vocabulary
+                    .filter((v: any) => (v.examples && v.examples.length > 0) || v.example)
+                    .map((v: any) => {
+                        const examples = v.examples?.map((ex: any, idx: number) => ({
+                            id: ex.id || `${v.id}_${idx}`,
+                            chinese: ex.sentence || ex.chinese || '',
+                            pinyin: ex.pinyin || ex.sentence_pinyin || '',
+                            vietnamese: ex.translation || ex.vietnamese || '',
+                        })) || [];
 
+                        if (examples.length === 0 && v.example) {
+                            examples.push({
+                                id: `legacy_${v.id}`,
+                                chinese: v.example,
+                                pinyin: '',
+                                vietnamese: 'Ví dụ minh họa (Legacy)',
+                            });
+                        }
+
+                        return {
+                            id: v.id,
+                            word: v.word,
+                            pinyin: v.pinyin,
+                            meaning: v.meaning,
+                            examples: examples,
+                        };
+                    });
+
+                if (vocabWithExamples.length > 0) {
+                    setVocabularyItems(vocabWithExamples);
+                    setLessonInfo({
+                        hskLevel: localData.hsk_level || hskLevel,
+                        title: localData.title || `Bài ${lessonId}`,
+                        lessonNumber: lessonId,
+                    });
+                    setIsLoading(false);
+                    
+                    // Refresh from API in background silently
+                    fetchGrammarFromAPI(true);
+                    return;
+                }
+            }
+            
+            await fetchGrammarFromAPI(false);
+        } catch (err) {
+            console.error('Error fetching grammar:', err);
+            await fetchGrammarFromAPI(false);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fetchGrammarFromAPI = async (silent = false) => {
+        try {
+            const token = await AsyncStorage.getItem('access_token');
             const response = await fetch(`${API_BASE_URL}/api/lessons/${lessonId}`, {
                 method: 'GET',
                 headers: {
@@ -117,37 +178,47 @@ const GrammarScreen: React.FC<GrammarScreenProps> = ({ route, navigation }) => {
                 const data = await response.json();
                 const vocabulary = data.vocabulary || [];
 
-                // Filter vocabulary items that have examples
                 const vocabWithExamples = vocabulary
-                    .filter((v: any) => v.examples && v.examples.length > 0)
-                    .map((v: any) => ({
-                        id: v.id,
-                        word: v.word,
-                        pinyin: v.pinyin,
-                        meaning: v.meaning,
-                        examples: v.examples.map((ex: any, idx: number) => ({
+                    .filter((v: any) => (v.examples && v.examples.length > 0) || v.example)
+                    .map((v: any) => {
+                        const examples = v.examples?.map((ex: any, idx: number) => ({
                             id: ex.id || `${v.id}_${idx}`,
                             chinese: ex.chinese || ex.sentence,
                             pinyin: ex.pinyin || ex.sentence_pinyin,
                             vietnamese: ex.vietnamese || ex.translation,
-                        })),
-                    }));
+                        })) || [];
 
-                setVocabularyItems(vocabWithExamples.length > 0 ? vocabWithExamples : getMockData());
+                        if (examples.length === 0 && v.example) {
+                            examples.push({
+                                id: `legacy_${v.id}`,
+                                chinese: v.example,
+                                pinyin: '',
+                                vietnamese: 'Ví dụ minh họa (Legacy)',
+                            });
+                        }
+
+                        return {
+                            id: v.id,
+                            word: v.word,
+                            pinyin: v.pinyin,
+                            meaning: v.meaning,
+                            examples: examples,
+                        };
+                    });
+
+                if (vocabWithExamples.length > 0) setVocabularyItems(vocabWithExamples);
 
                 setLessonInfo({
                     hskLevel: data.hsk_level || hskLevel,
                     title: data.title || `Bài ${lessonId}`,
                     lessonNumber: lessonId,
                 });
-            } else {
+            } else if (!silent) {
                 setVocabularyItems(getMockData());
             }
         } catch (err) {
-            console.error('Error fetching vocabulary:', err);
-            setVocabularyItems(getMockData());
-        } finally {
-            setIsLoading(false);
+            console.error('API fetch error (grammar):', err);
+            if (!silent) setVocabularyItems(getMockData());
         }
     };
 

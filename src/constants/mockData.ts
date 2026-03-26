@@ -71,14 +71,6 @@ export const mockLessons: Lesson[] = [
 export const mockPracticeItems: PracticeItem[] = [
     {
         id: '1',
-        type: 'listening',
-        title: 'Luyện Nghe',
-        description: 'Cải thiện phản xạ nghe với người bản xứ',
-        icon: 'headphones',
-        buttonText: 'Bắt đầu',
-    },
-    {
-        id: '2',
         type: 'speaking',
         title: 'Luyện Nói',
         description: 'Chấm điểm phát âm AI chuẩn xác',
@@ -87,12 +79,21 @@ export const mockPracticeItems: PracticeItem[] = [
         buttonText: 'Bắt đầu',
     },
     {
+        id: '2',
+        type: 'radio',
+        title: 'Radio Thụ Động',
+        description: 'Nghe lại từ vựng & ví dụ như Podcast',
+        icon: 'radio',
+        buttonText: 'Nghe ngay',
+    },
+    {
         id: '3',
-        type: 'writing',
-        title: 'Luyện Viết',
-        description: 'Học cách viết các bộ thủ cơ bản',
-        icon: 'edit-2',
-        buttonText: 'Bắt đầu',
+        type: 'ai_chat',
+        title: 'Hội thoại AI',
+        description: 'Chat tự do với AI theo chủ đề',
+        icon: 'message-square',
+        hasAiBadge: true,
+        buttonText: 'Chat ngay',
     },
     {
         id: '4',
@@ -104,11 +105,19 @@ export const mockPracticeItems: PracticeItem[] = [
     },
     {
         id: '5',
-        type: 'review' as any,
+        type: 'review',
         title: 'Ôn tập SRS',
-        description: 'Ôn tập các từ vựng đã học theo thuật toán SRS',
+        description: 'Ôn tập từ vựng theo thuật toán SRS',
         icon: 'refresh-cw',
         buttonText: 'Học ngay',
+    },
+    {
+        id: '6',
+        type: 'offline',
+        title: 'Ôn tập Offline',
+        description: 'Xem lại từ vựng đã lưu khi không có mạng',
+        icon: 'wifi-off',
+        buttonText: 'Xem ngay',
     },
 ];
 

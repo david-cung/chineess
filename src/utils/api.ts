@@ -9,6 +9,44 @@ import {
 
 const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
 
+/**
+ * Auth APIs
+ */
+export const getCurrentUser = async (): Promise<any | null> => {
+    try {
+        const token = await AsyncStorage.getItem('access_token');
+        if (!token) return null;
+        
+        const response = await fetch(`${API_BASE_URL}/auth/me`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.ok ? await response.json() : null;
+    } catch (err) {
+        console.error('getCurrentUser failed:', err);
+        return null;
+    }
+};
+
+export const updateProfile = async (data: { full_name?: string; avatar?: string }): Promise<any | null> => {
+    try {
+        const token = await AsyncStorage.getItem('access_token');
+        if (!token) return null;
+        
+        const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+            method: 'PUT',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}` 
+            },
+            body: JSON.stringify(data)
+        });
+        return response.ok ? await response.json() : null;
+    } catch (err) {
+        console.error('updateProfile failed:', err);
+        return null;
+    }
+};
+
 export interface TrackProgressPayload {
     item_type: 'vocabulary' | 'grammar_example' | 'listening' | 'speaking';
     item_id: number;

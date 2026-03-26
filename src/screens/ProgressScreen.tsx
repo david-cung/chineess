@@ -16,11 +16,15 @@ import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../constant
 import { Card, Button, ProgressBar } from '../components';
 import { mockUser } from '../constants/mockData';
 import { getStatsOverview, getCurrentGoalProgress, getWeeklyStudyTime, getVocabularyGrowth, getUserAchievements } from '../utils/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { StatsOverview, Achievement } from '../types';
+
+const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
 
 const { width } = Dimensions.get('window');
 
-const ProgressScreen: React.FC = () => {
+const ProgressScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
     const [stats, setStats] = React.useState<StatsOverview | null>(null);
     const [goalProgress, setGoalProgress] = React.useState<any>(null);
     const [weeklyTime, setWeeklyTime] = React.useState<any>(null);
@@ -65,6 +69,51 @@ const ProgressScreen: React.FC = () => {
     
     const vocabularyNewWords = vocabGrowth?.new_words_this_week || 0;
     const vocabularyChange = vocabGrowth?.growth_percent || 0;
+
+    const handleContinueLearning = async () => {
+        try {
+            const token = await AsyncStorage.getItem('access_token');
+            if (!token) return;
+
+            const response = await fetch(`${API_BASE_URL}/api/v1/learning/resume`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                let rawLessonId = data.lesson?.id || data.id || data.lesson_id;
+                let lessonId: number | string = rawLessonId;
+                
+                if (typeof rawLessonId === 'string' && rawLessonId.startsWith('lesson_')) {
+                    lessonId = parseInt(rawLessonId.replace('lesson_', ''), 10);
+                } else if (typeof rawLessonId === 'string') {
+                    const parsed = parseInt(rawLessonId, 10);
+                    if (!isNaN(parsed)) lessonId = parsed;
+                }
+
+                const hskLevelText = data.course?.level || (data.hsk_level ? `HSK ${data.hsk_level}` : null);
+                const hskLevel = hskLevelText ? parseInt(hskLevelText.replace(/[^0-9]/g, '')) : (data.hsk_level || 1);
+
+                if (lessonId) {
+                    navigation?.navigate('LessonDetail', {
+                        lessonId: lessonId,
+                        hskLevel: hskLevel,
+                    });
+                } else if (data.navigation) {
+                    navigation?.navigate(data.navigation.screen, data.navigation.params);
+                }
+            } else {
+                const errorData = await response.json();
+                alert(`Lỗi: ${errorData.detail || 'Không thể tiếp tục học'}`);
+            }
+        } catch (err) {
+            console.error('Error resuming learning:', err);
+        }
+    };
 
     // Calculate bar chart dimensions
     const maxHours = Math.max(...weeklyStats.map((s: any) => s.hours), 1); // Avoid division by zero
@@ -138,7 +187,7 @@ const ProgressScreen: React.FC = () => {
                             <Text style={styles.overviewTitle}>Lộ trình {currentHskLevel}</Text>
                             <Button
                                 title="Tiếp tục học"
-                                onPress={() => { }}
+                                onPress={handleContinueLearning}
                                 size="small"
                                 style={styles.continueButton}
                             />

@@ -10,6 +10,7 @@ export default {
         icon: "./assets/icon.png",
         userInterfaceStyle: "light",
         newArchEnabled: true,
+        plugins: ["expo-sqlite"],
         splash: {
             image: "./assets/splash-icon.png",
             resizeMode: "contain",

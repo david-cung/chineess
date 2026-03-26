@@ -8,15 +8,18 @@ import {
     TouchableOpacity,
     StatusBar,
     ActivityIndicator,
+    FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
+import * as Speech from 'expo-speech';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
-import { Card, Button, ProgressBar, QuickAction } from '../components';
+import { Card, Button, ProgressBar, QuickAction, ErrorState } from '../components';
 import { mockDailyGoal } from '../constants/mockData';
 import { getReviewStatus } from '../utils/api';
+import { dbService } from '../services/database';
 
 // Get API base URL from config
 const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
@@ -51,6 +54,23 @@ interface ContinueLearning {
     progress: ProgressInfo;
 }
 
+interface VocabItem {
+    id: number;
+    word: string;
+    pinyin: string;
+    meaning: string;
+    audio_url?: string;
+}
+
+interface GrammarPoint {
+    id: number;
+    title: string;
+    explanation: string;
+    lesson_id: number;
+    lesson_title: string;
+    examples: { id: number; example: string; translation: string }[];
+}
+
 interface HomeScreenProps {
     navigation?: any;
 }
@@ -59,8 +79,15 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const [userSummary, setUserSummary] = useState<UserSummary | null>(null);
     const [continueLearning, setContinueLearning] = useState<ContinueLearning | null>(null);
     const [reviewDueCount, setReviewDueCount] = useState(0);
+    const [randomVocab, setRandomVocab] = useState<VocabItem[]>([]);
+    const [featuredGrammar, setFeaturedGrammar] = useState<GrammarPoint[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isVocabLoading, setIsVocabLoading] = useState(false);
+    const [isGrammarLoading, setIsGrammarLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const scrollViewRef = React.useRef<ScrollView>(null);
+    const vocabSectionRef = React.useRef<View>(null);
+    const grammarSectionRef = React.useRef<View>(null);
 
     useEffect(() => {
         fetchData();
@@ -68,7 +95,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
     const fetchData = async () => {
         setIsLoading(true);
-        await Promise.all([fetchUserSummary(), fetchContinueLearning(), fetchReviewStatus()]);
+        await Promise.all([
+            fetchUserSummary(),
+            fetchContinueLearning(),
+            fetchReviewStatus(),
+            fetchRandomVocab(),
+            fetchFeaturedGrammar()
+        ]);
         setIsLoading(false);
     };
 
@@ -130,6 +163,119 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         } catch (err) {
             console.error('Error fetching continue learning:', err);
         }
+    };
+
+    const fetchRandomVocab = async () => {
+        try {
+            setIsVocabLoading(true);
+
+            // 1. Try SQLite first
+            const localData = await dbService.getRandomVocabulary(10);
+            if (localData && localData.length > 0) {
+                const mappedData = localData.map((item: any) => ({
+                    id: item.id,
+                    word: item.word,
+                    pinyin: item.pinyin,
+                    meaning: item.meaning,
+                    audio_url: item.audio_url
+                }));
+                setRandomVocab(mappedData);
+                setIsVocabLoading(false);
+                
+                // Still refresh from API silently
+                fetchRandomVocabFromAPI(true);
+            } else {
+                await fetchRandomVocabFromAPI(false);
+            }
+        } catch (err) {
+            console.error('Error fetching random vocab:', err);
+            await fetchRandomVocabFromAPI(false);
+        } finally {
+            setIsVocabLoading(false);
+        }
+    };
+
+    const fetchRandomVocabFromAPI = async (silent = false) => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/characters/random?limit=10`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const mappedData = data.map((item: any) => ({
+                    id: item.id,
+                    word: item.character || item.word,
+                    pinyin: item.pinyin,
+                    meaning: item.meaning,
+                    audio_url: item.audio_url
+                }));
+                setRandomVocab(mappedData);
+                // Cache it
+                await AsyncStorage.setItem('cached_vocab', JSON.stringify(mappedData));
+            } else if (!silent) {
+                // Try to load from cache
+                const cached = await AsyncStorage.getItem('cached_vocab');
+                if (cached) setRandomVocab(JSON.parse(cached));
+            }
+        } catch (err) {
+            if (!silent) {
+                console.error('Error fetching random vocab API:', err);
+                const cached = await AsyncStorage.getItem('cached_vocab');
+                if (cached) setRandomVocab(JSON.parse(cached));
+            }
+        }
+    };
+
+    const fetchFeaturedGrammar = async () => {
+        try {
+            setIsGrammarLoading(true);
+            
+            // 1. Try SQLite first
+            const localData = await dbService.getFeaturedGrammar(3);
+            if (localData && localData.length > 0) {
+                setFeaturedGrammar(localData);
+                setIsGrammarLoading(false);
+                
+                // Still refresh from API silently
+                fetchFeaturedGrammarFromAPI(true);
+            } else {
+                await fetchFeaturedGrammarFromAPI(false);
+            }
+        } catch (err) {
+            console.error('Error fetching featured grammar:', err);
+            await fetchFeaturedGrammarFromAPI(false);
+        } finally {
+            setIsGrammarLoading(false);
+        }
+    };
+
+    const fetchFeaturedGrammarFromAPI = async (silent = false) => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/lessons/grammar/featured?limit=3`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setFeaturedGrammar(data);
+            }
+        } catch (err) {
+            if (!silent) console.error('Error fetching featured grammar API:', err);
+        }
+    };
+
+    const playAudio = (text: string) => {
+        Speech.speak(text, {
+            language: 'zh-CN',
+            rate: 0.8,
+        });
     };
 
     const handleContinueLearning = async () => {
@@ -205,10 +351,21 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const streakDays = userSummary?.streakDays || 0;
     const avatarInitial = userName.charAt(0).toUpperCase();
 
+    if (!userSummary && !isLoading && error) {
+        return (
+            <SafeAreaView style={styles.container}>
+                <View style={{ flex: 1, justifyContent: 'center' }}>
+                    <ErrorState message={error} onRetry={fetchData} />
+                </View>
+            </SafeAreaView>
+        );
+    }
+
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
             <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
             <ScrollView
+                ref={scrollViewRef}
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
@@ -329,38 +486,128 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                     </View>
                     <View style={styles.quickActionsGrid}>
                         <QuickAction
-                            icon="book-open"
-                            title="Từ vựng"
-                            onPress={() => { }}
+                            icon="play-circle"
+                            title="Tiếp tục học"
+                            onPress={handleContinueLearning}
                             iconColor={COLORS.primary}
                             iconBackgroundColor={COLORS.progressBackground}
                         />
                         <View style={styles.quickActionSpacer} />
                         <QuickAction
-                            icon="headphones"
-                            title="Luyện nghe"
-                            onPress={() => { }}
+                            icon="refresh-cw"
+                            title="Ôn tập (SRS)"
+                            badge={reviewDueCount > 0 ? reviewDueCount : undefined}
+                            onPress={() => navigation?.navigate('Review')}
                             iconColor={COLORS.secondary}
                             iconBackgroundColor="#EBF3FC"
                         />
                     </View>
                     <View style={[styles.quickActionsGrid, { marginTop: SPACING.md }]}>
                         <QuickAction
-                            icon="mic"
-                            title="Luyện nói"
-                            onPress={() => { }}
-                            iconColor="#4CAF50"
-                            iconBackgroundColor="#E8F5E9"
+                            icon="zap"
+                            title="Thử thách ngày"
+                            onPress={() => navigation?.navigate('SpeakingPractice')}
+                            iconColor="#FF9800"
+                            iconBackgroundColor="#FFF3E0"
                         />
                         <View style={styles.quickActionSpacer} />
                         <QuickAction
-                            icon="edit-3"
-                            title="Viết chữ"
-                            onPress={() => { }}
-                            iconColor="#9C27B0"
-                            iconBackgroundColor="#F3E5F5"
+                            icon="bar-chart-2"
+                            title="Tiến độ học"
+                            onPress={() => navigation?.navigate('MainTabs', { screen: 'Progress' })}
+                            iconColor="#4CAF50"
+                            iconBackgroundColor="#E8F5E9"
                         />
                     </View>
+                </View>
+
+                {/* Random Vocabulary Section */}
+                <View style={styles.vocabSection} ref={vocabSectionRef}>
+                    <View style={styles.quickActionsHeader}>
+                        <Text style={styles.sectionTitle}>Gợi ý từ vựng hôm nay</Text>
+                        <TouchableOpacity onPress={fetchRandomVocab} disabled={isVocabLoading}>
+                            {isVocabLoading ? (
+                                <ActivityIndicator size="small" color={COLORS.primary} />
+                            ) : (
+                                <Feather name="refresh-cw" size={16} color={COLORS.primary} />
+                            )}
+                        </TouchableOpacity>
+                    </View>
+
+                    {randomVocab.length > 0 ? (
+                        <View style={styles.vocabList}>
+                            {randomVocab.map((item) => (
+                                <Card key={item.id} style={styles.vocabItemCard} variant="elevated">
+                                    <View style={styles.vocabItemRow}>
+                                        <View style={styles.vocabMainInfo}>
+                                            <Text style={styles.vocabWord}>{item.word}</Text>
+                                            <View style={styles.vocabDetails}>
+                                                <Text style={styles.vocabPinyin}>{item.pinyin}</Text>
+                                                <Text style={styles.vocabMeaning} numberOfLines={1}>
+                                                    {item.meaning}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                        <TouchableOpacity
+                                            style={styles.vocabAudioButton}
+                                            onPress={() => playAudio(item.word)}
+                                        >
+                                            <Ionicons name="volume-medium" size={24} color={COLORS.primary} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </Card>
+                            ))}
+                        </View>
+                    ) : (
+                        !isVocabLoading && <Text style={styles.emptyText}>Không có từ vựng nào được tìm thấy.</Text>
+                    )}
+                </View>
+
+                {/* Featured Grammar Section */}
+                <View style={styles.grammarSection} ref={grammarSectionRef}>
+                    <View style={styles.quickActionsHeader}>
+                        <Text style={styles.sectionTitle}>Ngữ pháp quan trọng</Text>
+                        <TouchableOpacity onPress={fetchFeaturedGrammar} disabled={isGrammarLoading}>
+                            {isGrammarLoading ? (
+                                <ActivityIndicator size="small" color={COLORS.primary} />
+                            ) : (
+                                <Feather name="refresh-cw" size={16} color={COLORS.primary} />
+                            )}
+                        </TouchableOpacity>
+                    </View>
+
+                    {featuredGrammar.length > 0 ? (
+                        <View style={styles.vocabList}>
+                            {featuredGrammar.map((item) => (
+                                <TouchableOpacity
+                                    key={item.id}
+                                    onPress={() => navigation?.navigate('LessonDetail', { lessonId: item.lesson_id })}
+                                >
+                                    <Card style={styles.grammarCard} variant="elevated">
+                                        <View style={styles.grammarCardHeader}>
+                                            <View style={styles.grammarBadge}>
+                                                <Text style={styles.grammarBadgeText}>Cấu trúc</Text>
+                                            </View>
+                                            <Text style={styles.grammarLessonTitle}>{item.lesson_title}</Text>
+                                        </View>
+                                        <Text style={styles.grammarTitle}>{item.title}</Text>
+                                        <Text style={styles.grammarExplanation} numberOfLines={2}>
+                                            {item.explanation}
+                                        </Text>
+                                        {item.examples.length > 0 && (
+                                            <View style={styles.grammarExampleContainer}>
+                                                <Text style={styles.grammarExampleText}>
+                                                    "{item.examples[0].example}"
+                                                </Text>
+                                            </View>
+                                        )}
+                                    </Card>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    ) : (
+                        !isGrammarLoading && <Text style={styles.emptyText}>Đang cập nhật thêm điểm ngữ pháp...</Text>
+                    )}
                 </View>
 
                 {/* Daily Goal */}
@@ -651,6 +898,112 @@ const styles = StyleSheet.create({
     reviewAlertSubtitle: {
         fontSize: FONT_SIZES.caption,
         color: COLORS.textSecondary,
+    },
+    vocabSection: {
+        marginBottom: SPACING.lg,
+    },
+    vocabList: {
+        marginTop: SPACING.xs,
+    },
+    vocabItemCard: {
+        marginBottom: SPACING.sm,
+        padding: SPACING.md,
+    },
+    vocabItemRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    vocabMainInfo: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    vocabWord: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        color: COLORS.textPrimary,
+        marginRight: SPACING.md,
+        minWidth: 60,
+    },
+    vocabDetails: {
+        flex: 1,
+    },
+    vocabPinyin: {
+        fontSize: FONT_SIZES.bodySmall,
+        color: COLORS.primary,
+        fontWeight: '600',
+        marginBottom: 2,
+    },
+    vocabMeaning: {
+        fontSize: FONT_SIZES.bodySmall,
+        color: COLORS.textSecondary,
+    },
+    vocabAudioButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: COLORS.primaryLight,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginLeft: SPACING.sm,
+    },
+    emptyText: {
+        textAlign: 'center',
+        color: COLORS.textSecondary,
+        marginTop: SPACING.lg,
+    },
+    grammarSection: {
+        marginBottom: SPACING.lg,
+    },
+    grammarCard: {
+        marginBottom: SPACING.md,
+        padding: SPACING.md,
+        borderLeftWidth: 4,
+        borderLeftColor: COLORS.secondary,
+    },
+    grammarCardHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: SPACING.sm,
+    },
+    grammarBadge: {
+        backgroundColor: COLORS.secondary + '20',
+        paddingHorizontal: SPACING.sm,
+        paddingVertical: 2,
+        borderRadius: BORDER_RADIUS.sm,
+    },
+    grammarBadgeText: {
+        color: COLORS.secondary,
+        fontSize: 10,
+        fontWeight: 'bold',
+    },
+    grammarLessonTitle: {
+        fontSize: 10,
+        color: COLORS.textLight,
+    },
+    grammarTitle: {
+        fontSize: FONT_SIZES.body,
+        fontWeight: '700',
+        color: COLORS.textPrimary,
+        marginBottom: 4,
+    },
+    grammarExplanation: {
+        fontSize: FONT_SIZES.bodySmall,
+        color: COLORS.textSecondary,
+        lineHeight: 20,
+        marginBottom: SPACING.sm,
+    },
+    grammarExampleContainer: {
+        backgroundColor: COLORS.background,
+        padding: SPACING.sm,
+        borderRadius: BORDER_RADIUS.sm,
+    },
+    grammarExampleText: {
+        fontSize: FONT_SIZES.caption,
+        color: COLORS.textPrimary,
+        fontStyle: 'italic',
     },
 });
 

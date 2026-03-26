@@ -9,6 +9,7 @@ interface QuickActionProps {
     onPress: () => void;
     iconColor?: string;
     iconBackgroundColor?: string;
+    badge?: number | string;
 }
 
 export const QuickAction: React.FC<QuickActionProps> = ({
@@ -17,11 +18,17 @@ export const QuickAction: React.FC<QuickActionProps> = ({
     onPress,
     iconColor = COLORS.primary,
     iconBackgroundColor = COLORS.progressBackground,
+    badge,
 }) => {
     return (
         <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.7}>
             <View style={[styles.iconContainer, { backgroundColor: iconBackgroundColor }]}>
                 <Feather name={icon} size={24} color={iconColor} />
+                {badge !== undefined && (
+                    <View style={styles.badgeContainer}>
+                        <Text style={styles.badgeText}>{badge}</Text>
+                    </View>
+                )}
             </View>
             <Text style={styles.title}>{title}</Text>
         </TouchableOpacity>
@@ -51,6 +58,25 @@ const styles = StyleSheet.create({
         fontWeight: '500',
         color: COLORS.textPrimary,
         textAlign: 'center',
+    },
+    badgeContainer: {
+        position: 'absolute',
+        top: -5,
+        right: -5,
+        backgroundColor: COLORS.error,
+        borderRadius: 10,
+        minWidth: 20,
+        height: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 4,
+        borderWidth: 1.5,
+        borderColor: COLORS.cardBackground,
+    },
+    badgeText: {
+        color: 'white',
+        fontSize: 10,
+        fontWeight: '700',
     },
 });
 
